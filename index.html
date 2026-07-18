@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PRISMAR ERP</title>
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Dexie.js (IndexedDB wrapper) -->
+    <script src="https://unpkg.com/dexie/dist/dexie.js"></script>
+    <!-- SweetAlert2 (for nice modals/alerts) -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="layout">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">P</div>
+                <h2>PRISMAR</h2>
+                <button class="mobile-close-btn" id="btn-close-sidebar"><i class="ph ph-x"></i></button>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-item active" data-view="dashboard">
+                    <i class="ph ph-squares-four"></i> Dashboard
+                </a>
+                <a href="#" class="nav-item" data-view="products">
+                    <i class="ph ph-package"></i> Productos
+                </a>
+                <div class="nav-divider"></div>
+                <a href="#" class="nav-item" data-view="reports">
+                    <i class="ph ph-chart-line-up"></i> Reportes
+                </a>
+                <a href="#" class="nav-item" data-view="settings">
+                    <i class="ph ph-gear"></i> Configuración
+                </a>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <div class="user-info">
+                    <div class="avatar"><i class="ph ph-user"></i></div>
+                    <div class="details">
+                        <span class="name">Administrador</span>
+                        <span class="role">PRISMAR ERP</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Wrapper -->
+        <div class="main-wrapper">
+            <!-- Topbar -->
+            <header class="topbar">
+                <button class="mobile-toggle-btn" id="btn-toggle-sidebar">
+                    <i class="ph ph-list"></i>
+                </button>
+                <div class="topbar-search">
+                    <i class="ph ph-magnifying-glass"></i>
+                    <input type="text" placeholder="Buscar productos, pedidos, clientes...">
+                </div>
+                <div class="topbar-actions">
+                    <button class="action-btn" title="Escanear Código"><i class="ph ph-barcode"></i></button>
+                    <button class="action-btn" title="Notificaciones"><i class="ph ph-bell"></i></button>
+                    <div class="quick-actions-dropdown" style="position: relative;">
+                        <button class="btn btn-primary btn-sm" id="btn-quick-create"><i class="ph ph-plus"></i> Crear <i class="ph ph-caret-down"></i></button>
+                        <div class="dropdown-menu" id="quick-create-menu">
+                            <button class="dropdown-item" id="quick-new-product"><i class="ph ph-package"></i> Nuevo Producto</button>
+                            <button class="dropdown-item" onclick="Swal.fire('Tip', 'Ve al producto y regístralo desde su propia ficha', 'info')"><i class="ph ph-receipt"></i> Venta / Apartado</button>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Views Container -->
+            <main class="content-container">
+                <!-- VIEW: DASHBOARD -->
+                <section id="view-dashboard" class="view-section active">
+                    <div class="page-header">
+                        <div>
+                            <h1 class="page-title">Dashboard</h1>
+                            <p class="page-subtitle">Resumen general de tu negocio</p>
+                        </div>
+                    </div>
+                    
+                    <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px;">
+                        <div class="card stat-card" style="padding: 20px;">
+                            <div class="stat-icon bg-green"><i class="ph ph-money"></i></div>
+                            <div class="stat-details">
+                                <span class="stat-label">Ingresos Brutos Globales</span>
+                                <span class="stat-value text-success" id="dash-global-revenue">RD$0</span>
+                            </div>
+                        </div>
+                        <div class="card stat-card" style="padding: 20px;">
+                            <div class="stat-icon bg-blue"><i class="ph ph-package"></i></div>
+                            <div class="stat-details">
+                                <span class="stat-label">Unidades Vendidas Totales</span>
+                                <span class="stat-value" id="dash-global-sold">0</span>
+                            </div>
+                        </div>
+                        <div class="card stat-card" style="padding: 20px;">
+                            <div class="stat-icon" style="background-color: rgba(239, 68, 68, 0.2); color: var(--danger);"><i class="ph ph-receipt"></i></div>
+                            <div class="stat-details">
+                                <span class="stat-label">Gastos Globales</span>
+                                <span class="stat-value text-danger" id="dash-global-expenses">RD$0</span>
+                            </div>
+                        </div>
+                        <div class="card stat-card" style="padding: 20px;">
+                            <div class="stat-icon bg-purple"><i class="ph ph-trend-up"></i></div>
+                            <div class="stat-details">
+                                <span class="stat-label">Ganancia Neta Global</span>
+                                <span class="stat-value" id="dash-global-profit">RD$0</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-content-grid">
+                        <div class="card chart-card">
+                            <h3 class="card-title">Ventas (Últimos 7 días)</h3>
+                            <div id="dash-sales-numbers" class="sales-numbers-list mt-3">
+                                <!-- Se llenará con JS -->
+                            </div>
+                        </div>
+                        <div class="card activity-card">
+                            <h3 class="card-title">Actividad Reciente</h3>
+                            <div class="activity-list" id="dash-activity-list">
+                                <p class="text-muted text-center mt-4">No hay actividad reciente</p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- VIEW: PRODUCTS -->
+                <section id="view-products" class="view-section">
+                    <div class="page-header flex-between">
+                        <div>
+                            <h1 class="page-title">Productos</h1>
+                            <p class="page-subtitle">Gestiona tu catálogo e inventario</p>
+                        </div>
+                        <button class="btn btn-primary" id="btn-new-product"><i class="ph ph-plus"></i> Nuevo Producto</button>
+                    </div>
+                    <div class="card">
+                        <div class="flex-between mb-3">
+                            <h2 class="card-title" style="margin-bottom:0;">Inventario Activo</h2>
+                            <div style="display: flex; gap: 12px; align-items: center;">
+                                <select id="sort-products" class="btn-sm" style="padding: 6px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-main); color: var(--text-main);">
+                                    <option value="name">Ordenar por: Nombre</option>
+                                    <option value="stock-asc">Menor Stock (Alertas)</option>
+                                    <option value="stock-desc">Mayor Stock</option>
+                                    <option value="profit">Más Ganancias Netas</option>
+                                    <option value="expenses">Más Gastos Registrados</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table" id="products-table">
+                                <thead>
+                                    <tr>
+                                        <th>Producto / SKU</th>
+                                        <th>Stock</th>
+                                        <th>Estado</th>
+                                        <th>Precio Venta</th>
+                                        <th>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="products-tbody">
+                                    <tr><td colspan="5" class="text-center text-muted p-4">No hay productos registrados.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- VIEW: REPORTS -->
+                <section id="view-reports" class="view-section">
+                    <div class="page-header">
+                        <h1 class="page-title">Reportes</h1>
+                        <p class="page-subtitle">Analíticas detalladas del rendimiento</p>
+                    </div>
+                    <div class="card"><p class="text-muted text-center p-4">El módulo de reportes se construirá aquí...</p></div>
+                </section>
+
+                <!-- VIEW: SETTINGS -->
+                <section id="view-settings" class="view-section">
+                    <div class="page-header">
+                        <h1 class="page-title">Configuración</h1>
+                        <p class="page-subtitle">Ajustes globales del sistema</p>
+                    </div>
+                    <div class="card"><p class="text-muted text-center p-4">El módulo de configuración se construirá aquí...</p></div>
+                </section>
+
+            </main>
+        </div>
+    </div>
+
+    <!-- Modals Area -->
+    <div class="modal-overlay" id="modal-product">
+        <div class="modal-container modal-lg">
+            <div class="modal-header">
+                <h2><i class="ph ph-package"></i> <span id="modal-title">Producto</span></h2>
+                <button class="btn-close-modal" id="btn-close-product-modal"><i class="ph ph-x"></i></button>
+            </div>
+
+            <!-- Tabs Navigation -->
+            <div class="modal-tabs" style="overflow-x: auto; white-space: nowrap;">
+                <button class="tab-btn active" data-tab="tab-metrics"><i class="ph ph-chart-bar"></i> Resumen</button>
+                <button class="tab-btn" data-tab="tab-info"><i class="ph ph-sliders"></i> Ajustes</button>
+                <button class="tab-btn" data-tab="tab-expenses"><i class="ph ph-receipt"></i> Gastos</button>
+                <button class="tab-btn" data-tab="tab-layaways"><i class="ph ph-calendar-plus"></i> Apartados</button>
+                <button class="tab-btn" data-tab="tab-sales"><i class="ph ph-check-circle"></i> Vendidos</button>
+            </div>
+
+            <div class="modal-body">
+                <!-- SUPER HEADER (Inyectado por JS) -->
+                <div class="super-header" id="super-header-container" style="display: none;">
+                    <!-- JS -->
+                </div>
+
+                <!-- TAB 0: METRICS (Resumen) -->
+                <div id="tab-metrics" class="tab-content active">
+                    <div id="metrics-message" class="text-center text-muted p-4">Guarda el producto para ver sus métricas.</div>
+                    <div id="metrics-container" style="display: none;">
+                        <!-- Fila 1: Principales -->
+                        <div class="stats-grid-3">
+                            <div class="stat-card-sm"><span class="label">Ingresos Brutos</span><span class="value text-success" id="pm-rev">RD$0</span></div>
+                            <div class="stat-card-sm"><span class="label">Ganancia Neta Real</span><span class="value text-primary" id="pm-net">RD$0</span></div>
+                            <div class="stat-card-sm"><span class="label">Gastos Totales</span><span class="value text-danger" id="pm-exp">RD$0</span></div>
+                            <div class="stat-card-sm"><span class="label">Unidades Vendidas</span><span class="value" id="pm-sold">0</span></div>
+                        </div>
+                        <!-- Fila 2: Inventario -->
+                        <div class="stats-grid-3">
+                            <div class="stat-card-sm"><span class="label">Inventario Disponible</span><span class="value" id="pm-stock">0</span></div>
+                            <div class="stat-card-sm"><span class="label">Valor del Inventario</span><span class="value text-muted" id="pm-stock-val">RD$0</span></div>
+                            <div class="stat-card-sm"><span class="label">Margen Promedio</span><span class="value" id="pm-margin">0%</span></div>
+                            <div class="stat-card-sm"><span class="label">ROI Multiplicador</span><span class="value" id="pm-roi">x0</span></div>
+                        </div>
+                        <!-- Fila 3: Tiempos -->
+                        <div class="stats-grid-3">
+                            <div class="stat-card-sm"><span class="label">Última Venta</span><span class="value" id="pm-last-sale">-</span></div>
+                            <div class="stat-card-sm"><span class="label">Días Sin Vender</span><span class="value" id="pm-days-idle">-</span></div>
+                            <div class="stat-card-sm"><span class="label">Promedio Ventas/Mes</span><span class="value" id="pm-avg-month">0</span></div>
+                            <div class="stat-card-sm"><span class="label">Ticket Promedio</span><span class="value" id="pm-ticket">RD$0</span></div>
+                        </div>
+                        
+                        <!-- Chart -->
+                        <div class="chart-wrapper">
+                            <div class="flex-between mb-3">
+                                <h3>Dinámica de Ventas</h3>
+                                <select id="chart-time-range" class="btn-sm" style="background:var(--bg-main); color:var(--text-main); border:1px solid var(--border-color); border-radius:4px;">
+                                    <option value="7">Últimos 7 días</option>
+                                    <option value="30" selected>Últimos 30 días</option>
+                                    <option value="90">Últimos 90 días</option>
+                                </select>
+                            </div>
+                            <div style="height: 250px;"><canvas id="prodSalesChart"></canvas></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 1: INFO & CALCULATOR -->
+                <div id="tab-info" class="tab-content">
+                    <div class="quick-actions-bar" id="quick-actions-bar" style="display: none;">
+                        <button class="btn btn-sm btn-outline text-primary" id="qa-price"><i class="ph ph-tag"></i> Cambiar Precio</button>
+                        <button class="btn btn-sm btn-outline text-success" id="qa-stock-add"><i class="ph ph-plus-circle"></i> Ingresar Stock</button>
+                        <button class="btn btn-sm btn-outline text-warning" id="qa-stock-remove"><i class="ph ph-minus-circle"></i> Descontar Stock</button>
+                        <button class="btn btn-sm btn-outline text-info" id="qa-image"><i class="ph ph-image"></i> Cambiar Imagen</button>
+                        <button class="btn btn-sm btn-outline" id="qa-duplicate"><i class="ph ph-copy"></i> Duplicar</button>
+                        <button class="btn btn-sm btn-outline text-danger" id="qa-delete"><i class="ph ph-trash"></i> Eliminar</button>
+                    </div>
+                    <form id="form-product">
+                        <input type="hidden" id="prod-id">
+                        <input type="hidden" id="prod-image-url">
+                    <div class="form-grid">
+                        <div class="form-section">
+                            <h3>Información General</h3>
+                            <div class="input-group" style="grid-column: 1 / -1;">
+                                <label>Presentación / Tipo de Venta *</label>
+                                <select id="prod-bundle" required style="font-size: 1.05rem; padding: 12px; background-color: rgba(37, 99, 235, 0.1); color: var(--primary); border: 2px solid var(--primary); font-weight: 600;">
+                                    <option value="1">1 Unidad (Individual)</option>
+                                    <option value="2">Combo de 2 Unidades</option>
+                                    <option value="3">Combo de 3 Unidades</option>
+                                    <option value="pack">Paquete Especial / Mayor</option>
+                                </select>
+                            </div>
+                            <div class="input-group">
+                                <label>Nombre del Producto *</label>
+                                <input type="text" id="prod-name" required>
+                            </div>
+                            <div class="form-row">
+                                <div class="input-group">
+                                <label>Categoría</label>
+                                <select id="prod-category">
+                                    <option value="💄 Belleza">💄 Belleza</option>
+                                    <option value="⌚ Accesorios">⌚ Accesorios</option>
+                                    <option value="🏠 Hogar">🏠 Hogar</option>
+                                    <option value="💪 Salud y Bienestar">💪 Salud y Bienestar</option>
+                                    <option value="📱 Gadgets Útiles">📱 Gadgets Útiles</option>
+                                    <option value="Otros">Otros</option>
+                                </select>
+                            </div>
+                                <div class="input-group">
+                                    <label>Proveedor</label>
+                                    <input type="text" id="prod-supplier">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="input-group">
+                                    <label>SKU</label>
+                                    <input type="text" id="prod-sku">
+                                </div>
+                                <div class="input-group">
+                                    <label>Código Interno</label>
+                                    <input type="text" id="prod-code">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="input-group">
+                                    <label>Stock Inicial *</label>
+                                    <input type="number" id="prod-stock" value="0" min="0" required>
+                                </div>
+                                <div class="input-group">
+                                    <label>Stock Mínimo (Alerta)</label>
+                                    <input type="number" id="prod-min-stock" value="5" min="0">
+                                </div>
+                            </div>
+                            <div class="input-group">
+                                <label>Estado</label>
+                                <select id="prod-status">
+                                    <option value="active">Activo</option>
+                                    <option value="inactive">Inactivo</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="form-section bg-darker p-4 rounded">
+                            <h3>Estructura de Costos y Rentabilidad</h3>
+                            <div class="form-row">
+                                <div class="input-group">
+                                    <label>Costo de Compra (RD$) *</label>
+                                    <input type="number" id="prod-cost" value="0" min="0" class="calc-input" required>
+                                </div>
+                                <div class="input-group">
+                                    <label>Precio de Venta (RD$) *</label>
+                                    <input type="number" id="prod-price" value="0" min="0" class="calc-input" required>
+                                </div>
+                            </div>
+                            
+                            <div class="expenses-grid">
+                                <div class="input-group">
+                                    <label>Publicidad</label>
+                                    <input type="number" id="prod-ads" value="0" min="0" class="calc-input">
+                                </div>
+                                <div class="input-group">
+                                    <label>Empaque</label>
+                                    <input type="number" id="prod-pack" value="0" min="0" class="calc-input">
+                                </div>
+                                <div class="input-group">
+                                    <label>Envío (Prov.)</label>
+                                    <input type="number" id="prod-ship" value="0" min="0" class="calc-input">
+                                </div>
+                                <div class="input-group">
+                                    <label>Comisión</label>
+                                    <input type="number" id="prod-comm" value="0" min="0" class="calc-input">
+                                </div>
+                                <div class="input-group">
+                                    <label>Otros Gastos</label>
+                                    <input type="number" id="prod-other" value="0" min="0" class="calc-input">
+                                </div>
+                            </div>
+
+                            <div class="calc-results mt-4">
+                                <h4 class="mb-3 text-primary"><i class="ph ph-calculator"></i> Proyección Financiera</h4>
+                                <div class="flex-between mb-2"><span class="text-muted">Costo Total:</span> <strong id="res-total-cost">RD$0</strong></div>
+                                <div class="flex-between mb-2"><span class="text-muted">Ganancia Neta:</span> <strong id="res-profit" class="text-success">RD$0</strong></div>
+                                <div class="flex-between mb-2"><span class="text-muted">Margen (%):</span> <strong id="res-margin">0%</strong></div>
+                                <div class="flex-between mb-3"><span class="text-muted">ROI / Mult:</span> <strong id="res-roi">0% (x0)</strong></div>
+                                <hr class="border-color my-3">
+                                <div class="flex-between mb-2"><span class="text-muted">Sugerido Oferta 2x:</span> <strong id="res-offer-2x" class="text-info">RD$0</strong></div>
+                                <div class="flex-between"><span class="text-muted">Sugerido Oferta 3x:</span> <strong id="res-offer-3x" class="text-info">RD$0</strong></div>
+                            </div>
+                        </div>
+                    </div>
+                        <div class="modal-footer flex-end gap-3 mt-4 pt-4 border-top">
+                            <button type="submit" class="btn btn-primary w-100" style="padding: 14px;"><i class="ph ph-floppy-disk"></i> Guardar Cambios</button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- TAB 2: LAYAWAYS (Apartados) -->
+                <div id="tab-layaways" class="tab-content">
+                    <div class="flex-between mb-3">
+                        <p class="text-muted">Gestiona productos reservados por clientes.</p>
+                        <button class="btn btn-primary btn-sm" id="btn-new-layaway" style="display: none;"><i class="ph ph-plus"></i> Nuevo Apartado</button>
+                    </div>
+                    
+                    <div id="form-layaway-container" class="card bg-darker p-3 mb-3" style="display: none;">
+                        <form id="form-layaway">
+                            <div class="form-row">
+                                <div class="input-group">
+                                    <label>Nombre del Cliente *</label>
+                                    <input type="text" id="lay-customer" required>
+                                </div>
+                                <div class="input-group">
+                                    <label>Teléfono / WhatsApp</label>
+                                    <input type="text" id="lay-phone">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="input-group" style="flex: 1;">
+                                    <label>Cant.</label>
+                                    <input type="number" id="lay-qty" value="1" min="1" required>
+                                </div>
+                                <div class="input-group" style="flex: 1;">
+                                    <label>Total Acordado (RD$)*</label>
+                                    <input type="number" id="lay-total" min="0" required>
+                                </div>
+                                <div class="input-group flex-end" style="align-items: flex-end; flex: 1.5;">
+                                    <button type="submit" class="btn btn-primary w-100">Registrar</button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div id="layaway-message" class="text-center text-muted p-4">Debes guardar el producto antes de poder crear apartados.</div>
+
+                    <div class="table-responsive" id="layaways-table-container" style="display: none;">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Fecha</th>
+                                    <th>Cliente / Teléfono</th>
+                                    <th>Cant.</th>
+                                    <th>Tiempo Rest.</th>
+                                    <th>Total</th>
+                                    <th>Acción</th>
+                                </tr>
+                            </thead>
+                            <tbody id="layaways-tbody">
+                                <!-- JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- TAB 3: SALES (Vendidos) -->
+                <div id="tab-sales" class="tab-content">
+                    <div class="flex-between mb-3">
+                        <p class="text-muted">Historial de ventas directas y apartados completados.</p>
+                        <button class="btn btn-success btn-sm" id="btn-direct-sale" style="display: none;"><i class="ph ph-money"></i> Venta Directa</button>
+                    </div>
+                    
+                    <div id="sales-message" class="text-center text-muted p-4">Debes guardar el producto primero.</div>
+
+                    <div class="table-responsive" id="sales-table-container" style="display: none;">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Fecha</th>
+                                    <th>Cliente</th>
+                                    <th>Pago</th>
+                                    <th>Cant.</th>
+                                    <th>Ingreso</th>
+                                    <th>Ganancia</th>
+                                    <th>Acción</th>
+                                </tr>
+                            </thead>
+                            <tbody id="sales-tbody">
+                                <!-- JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- TAB 4: EXPENSES (Gastos) -->
+                <div id="tab-expenses" class="tab-content">
+                    <div class="flex-between mb-3">
+                        <p class="text-muted">Registra compras de inventario, publicidad, u otros gastos del producto.</p>
+                        <button class="btn btn-danger btn-sm" id="btn-new-expense" style="display: none;"><i class="ph ph-plus"></i> Añadir Gasto</button>
+                    </div>
+                    
+                    <div id="form-expense-container" class="card bg-darker p-3 mb-3" style="display: none;">
+                        <form id="form-expense">
+                            <div class="form-row">
+                                <div class="input-group">
+                                    <label>Tipo de Gasto *</label>
+                                    <select id="exp-type">
+                                        <option value="Publicidad">Publicidad</option>
+                                        <option value="Empaque">Empaque</option>
+                                        <option value="Envio">Envío</option>
+                                        <option value="Comisiones">Comisiones</option>
+                                        <option value="CompraInventario">Compra Inventario</option>
+                                        <option value="Otros">Otros</option>
+                                    </select>
+                                </div>
+                                <div class="input-group">
+                                    <label>Monto (RD$) *</label>
+                                    <input type="number" id="exp-amount" min="1" required>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="input-group" style="flex: 2;">
+                                    <label>Descripción / Notas</label>
+                                    <input type="text" id="exp-desc" placeholder="Ej. Pago Meta Ads, Reabastecimiento...">
+                                </div>
+                                <div class="input-group flex-end" style="align-items: flex-end;">
+                                    <button type="submit" class="btn btn-danger w-100">Registrar</button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div id="expenses-message" class="text-center text-muted p-4">Debes guardar el producto primero.</div>
+
+                    <div id="expenses-dashboard" style="display: none;">
+                        <div class="stats-grid-3">
+                            <div class="stat-card-sm"><span class="label">Total Gastado</span><span class="value text-danger" id="exp-total-val">RD$0</span></div>
+                            <div class="stat-card-sm"><span class="label">Costo Promedio (Gasto/Und)</span><span class="value" id="exp-avg-val">RD$0</span></div>
+                        </div>
+                        <div class="chart-wrapper mb-4">
+                            <h3 class="mb-3 text-center">Distribución de Gastos</h3>
+                            <div class="donut-container">
+                                <canvas id="prodExpensesChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="table-responsive" id="expenses-table-container" style="display: none;">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Fecha</th>
+                                    <th>Tipo</th>
+                                    <th>Descripción</th>
+                                    <th>Monto</th>
+                                    <th>Acción</th>
+                                </tr>
+                            </thead>
+                            <tbody id="expenses-tbody">
+                                <!-- JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script src="db.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
