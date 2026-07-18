@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="es" data-theme="dark">
 <head>
     <meta charset="UTF-8">
@@ -17,7 +16,10 @@
     <!-- SweetAlert2 (for nice modals/alerts) -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     
-    <link rel="stylesheet" href="styles.css?v=4.0">
+    <!-- SheetJS (Excel Export) -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    
+    <link rel="stylesheet" href="styles.css?v=9.0">
 </head>
 <body>
     <!-- Pantalla de Login (PIN) -->
@@ -102,11 +104,12 @@
             <main class="content-container">
                 <!-- VIEW: DASHBOARD -->
                 <section id="view-dashboard" class="view-section active">
-                    <div class="page-header">
+                    <div class="page-header flex-between">
                         <div>
                             <h1 class="page-title">Dashboard</h1>
                             <p class="page-subtitle">Resumen general de tu negocio</p>
                         </div>
+                        <button class="btn btn-outline text-primary" onclick="generateReport('global')"><i class="ph ph-chart-bar"></i> Reporte Global</button>
                     </div>
                     
                     <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px;">
@@ -440,6 +443,10 @@
                                     <label>Total Acordado (RD$)*</label>
                                     <input type="number" id="lay-total" min="0" required>
                                 </div>
+                                <div class="input-group" style="flex: 1.5;">
+                                    <label>Fecha Límite *</label>
+                                    <input type="date" id="lay-expected-date" required>
+                                </div>
                                 <div class="input-group flex-end" style="align-items: flex-end; flex: 1.5;">
                                     <button type="submit" class="btn btn-primary w-100">Registrar</button>
                                 </div>
@@ -572,7 +579,7 @@
         </div>
     </div>
 
-    <script src="db.js?v=4.0"></script>
-    <script src="app.js?v=4.0"></script>
+    <script src="db.js?v=9.0"></script>
+    <script src="app.js?v=9.0"></script>
 </body>
 </html>

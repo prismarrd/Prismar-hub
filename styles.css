@@ -1002,11 +1002,21 @@ hr.border-color { border: none; border-top: 1px solid var(--border-color); }
     }
     .modal-container {
         max-width: 100%;
-        max-height: 95vh;
+        max-height: 85vh; /* slightly shorter to show it's a bottom sheet */
+        height: auto;
         border-radius: 20px 20px 0 0;
         border-bottom: none;
         border-left: none;
         border-right: none;
+        margin: 0;
+        width: 100%;
+    }
+    .activity-card {
+        margin-bottom: 20px;
+    }
+    .activity-list {
+        max-height: 300px;
+        overflow-y: auto;
     }
     .modal-header, .modal-body {
         padding: 16px;
@@ -1049,5 +1059,42 @@ hr.border-color { border: none; border-top: 1px solid var(--border-color); }
     }
     .modal-tabs::-webkit-scrollbar {
         display: none;
+    }
+}
+
+/* Print Styles (PDF Export) */
+@media print {
+    body * {
+        visibility: hidden;
+    }
+    /* Solo hacer visible el SweetAlert */
+    .swal2-container, .swal2-container * {
+        visibility: visible;
+    }
+    .swal2-container {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+        background: transparent !important;
+    }
+    .swal2-popup {
+        box-shadow: none !important;
+        border: none !important;
+        background: white !important; /* Force white background for print */
+        color: black !important;
+    }
+    .swal2-title, .swal2-html-container, .stat-card-sm .value, .stat-card-sm .label {
+        color: black !important;
+    }
+    /* Ocultar elementos interactivos en la impresión */
+    .swal2-actions, #swal-report-range, select, button {
+        display: none !important;
+    }
+    .stat-card-sm {
+        border: 1px solid #ccc !important;
+        background: transparent !important;
     }
 }
