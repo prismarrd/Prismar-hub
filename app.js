@@ -495,23 +495,36 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     window.deleteProduct = async function(id) {
-        const result = await Swal.fire({
-            title: '¿Eliminar producto?',
-            text: "Esta acción no se puede deshacer.",
-            icon: 'warning',
+        const { value: pin } = await Swal.fire({
+            title: 'Autorización Requerida',
+            text: 'Introduce el PIN de seguridad para eliminar este producto:',
+            input: 'password',
+            inputPlaceholder: 'PIN',
             showCancelButton: true,
-            confirmButtonColor: '#EF4444',
-            cancelButtonColor: '#374151',
-            confirmButtonText: 'Sí, eliminar',
+            confirmButtonText: 'Eliminar',
             cancelButtonText: 'Cancelar'
         });
 
-        if (result.isConfirmed) {
-            await db.products.delete(id);
-            // Optionally, we could delete associated layaways and sales here, or keep them.
-            loadProductsTable();
-            initDashboard();
-            Swal.fire({icon: 'success', title: 'Eliminado', timer: 1000, showConfirmButton: false});
+        if (pin === '1290') {
+            const result = await Swal.fire({
+                title: '¿Confirmar eliminación?',
+                text: "Esta acción borrará el producto de forma permanente. (Sus ventas y gastos seguirán en el sistema)",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#EF4444',
+                cancelButtonColor: '#374151',
+                confirmButtonText: 'Sí, eliminar',
+                cancelButtonText: 'Cancelar'
+            });
+
+            if (result.isConfirmed) {
+                await db.products.delete(id);
+                loadProductsTable();
+                initDashboard();
+                Swal.fire({icon: 'success', title: 'Eliminado', timer: 1000, showConfirmButton: false});
+            }
+        } else if (pin) {
+            Swal.fire('Error', 'PIN incorrecto', 'error');
         }
     };
 
@@ -537,6 +550,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 qtyInput.oninput = () => {
                     totalInput.value = p.price * parseInt(qtyInput.value || 1);
                 };
+
+                const expectedDateInput = document.getElementById('lay-expected-date');
+                if (expectedDateInput) {
+                    const today = new Date();
+                    today.setDate(today.getDate() + 15);
+                    expectedDateInput.value = today.toISOString().split('T')[0];
+                }
             }
         });
     }
@@ -556,12 +576,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            const expectedDate = document.getElementById('lay-expected-date').value;
+
             const layaway = {
                 productId: prodId,
                 customer: document.getElementById('lay-customer').value,
                 phone: document.getElementById('lay-phone').value || '',
                 qty: qty,
                 date: new Date().toISOString(),
+                expectedDate: expectedDate || null,
                 status: 'pending',
                 totalAmount: totalAmount
             };
@@ -589,12 +612,24 @@ document.addEventListener('DOMContentLoaded', () => {
         layaways.forEach(l => {
             const tr = document.createElement('tr');
             
-            // Calculate remaining time (example logic: expected pickup in 15 days)
+            // Calculate remaining time
             const created = new Date(l.date);
-            const expected = new Date(created.getTime() + (15 * 24 * 60 * 60 * 1000));
-            const diffDays = Math.ceil((expected - new Date()) / (1000 * 60 * 60 * 24));
+            let expected;
+            if (l.expectedDate) {
+                // If we have a user selected date, use it and set it to end of day
+                expected = new Date(l.expectedDate + 'T23:59:59');
+            } else {
+                // Fallback to 15 days from creation
+                expected = new Date(created.getTime() + (15 * 24 * 60 * 60 * 1000));
+            }
+            
+            const now = new Date();
+            const diffTime = expected - now;
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            
             let timeBadge = '';
-            if (diffDays < 0) timeBadge = `<span class="badge badge-red">Atrasado</span>`;
+            if (diffDays < 0) timeBadge = `<span class="badge badge-red">Atrasado (${Math.abs(diffDays)}d)</span>`;
+            else if (diffDays === 0) timeBadge = `<span class="badge badge-yellow">¡Hoy!</span>`;
             else if (diffDays <= 3) timeBadge = `<span class="badge badge-yellow">${diffDays} días</span>`;
             else timeBadge = `<span class="badge badge-green">${diffDays} días</span>`;
 
@@ -666,12 +701,13 @@ document.addEventListener('DOMContentLoaded', () => {
             // Mark layaway sold
             await db.layaways.update(layawayId, { status: 'sold' });
 
-            // Create Sale record
+            // Create Sale record (using the layaway agreed total amount instead of current product price)
+            const unitPrice = l.totalAmount / l.qty;
             await db.sales.add({
                 productId: productId,
                 customer: l.customer,
                 qty: l.qty,
-                price: p.price,
+                price: unitPrice,
                 paymentMethod: paymentMethod,
                 totalCost: (p.cost + p.ads + p.pack + p.ship + p.comm + p.other) * l.qty,
                 date: new Date().toISOString(),
@@ -711,6 +747,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         <input id="swal-cust" class="swal2-input" placeholder="Nombre">
                         <label>Cantidad:</label>
                         <input id="swal-qty" type="number" class="swal2-input" value="1" min="1" max="${p.stock}">
+                        <label>Precio:</label>
+                        <input id="swal-price" type="number" class="swal2-input" value="${p.price}">
                         <label>Método de Pago:</label>
                         <select id="swal-pay-method" class="swal2-input">
                             <option value="Efectivo">Efectivo</option>
@@ -726,13 +764,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     return {
                         cust: document.getElementById('swal-cust').value || 'Mostrador',
                         qty: parseInt(document.getElementById('swal-qty').value) || 1,
+                        price: parseFloat(document.getElementById('swal-price').value) || p.price,
                         paymentMethod: document.getElementById('swal-pay-method').value
                     }
                 }
             });
 
             if (result.isConfirmed) {
-                const {cust, qty, paymentMethod} = result.value;
+                const {cust, qty, price, paymentMethod} = result.value;
                 if(qty > p.stock) {
                     Swal.fire('Error', 'Cantidad mayor al stock.', 'error');
                     return;
@@ -746,7 +785,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     productId: prodId,
                     customer: cust,
                     qty: qty,
-                    price: p.price,
+                    price: price,
                     paymentMethod: paymentMethod,
                     totalCost: (p.cost + p.ads + p.pack + p.ship + p.comm + p.other) * qty,
                     date: new Date().toISOString(),
@@ -790,11 +829,60 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td>${s.qty}</td>
                 <td class="text-info">RD$${revenue.toLocaleString()}</td>
                 <td class="${profit > 0 ? 'text-success' : 'text-danger'}">RD$${Math.round(profit).toLocaleString()}</td>
-                <td><button class="btn btn-sm btn-outline" onclick="Swal.fire('Detalle', 'Venta el ${new Date(s.date).toLocaleString()}', 'info')"><i class="ph ph-eye"></i></button></td>
+                <td>
+                    <div style="display:flex; gap:6px;">
+                        <button class="btn btn-sm btn-outline" onclick="Swal.fire('Detalle', 'Venta el ${new Date(s.date).toLocaleString()}', 'info')"><i class="ph ph-eye"></i></button>
+                        <button class="btn btn-sm btn-outline text-danger" onclick="deleteSale('${s.id}', '${s.productId}')" title="Eliminar y devolver stock"><i class="ph ph-trash"></i></button>
+                    </div>
+                </td>
             `;
             tbody.appendChild(tr);
         });
     }
+
+    window.deleteSale = async function(saleId, productId) {
+        const { value: pin } = await Swal.fire({
+            title: 'Autorización Requerida',
+            text: 'Introduce el PIN de seguridad para eliminar esta venta y restaurar el stock:',
+            input: 'password',
+            inputPlaceholder: 'PIN',
+            showCancelButton: true,
+            confirmButtonText: 'Eliminar',
+            cancelButtonText: 'Cancelar'
+        });
+
+        if (pin === '1290') {
+            const result = await Swal.fire({
+                title: '¿Confirmar eliminación?',
+                text: "Se borrará la venta y las unidades volverán al inventario.",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#EF4444',
+                confirmButtonText: 'Sí, eliminar'
+            });
+
+            if (result.isConfirmed) {
+                const s = await db.sales.get(saleId);
+                if(s) {
+                    const p = await db.products.get(productId);
+                    if(p) {
+                        await db.products.update(productId, { stock: p.stock + s.qty });
+                        document.getElementById('prod-stock').value = p.stock + s.qty; // Update UI
+                    }
+                    await db.sales.delete(saleId);
+                    
+                    loadSales(productId);
+                    loadMetrics(productId);
+                    loadProductsTable(); 
+                    initDashboard(); 
+                    
+                    Swal.fire({icon: 'success', title: 'Venta Eliminada', text: 'Stock restaurado.', timer: 1500, showConfirmButton: false});
+                }
+            }
+        } else if (pin) {
+            Swal.fire('Error', 'PIN incorrecto', 'error');
+        }
+    };
 
     // --- Expenses (Gastos) Logic ---
     const btnNewExpense = document.getElementById('btn-new-expense');
@@ -1062,22 +1150,25 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         shContainer.innerHTML = `
-            <div class="super-header-top">
-                <div class="super-image"><i class="ph ph-package"></i></div>
-                <div class="super-title">
-                    <h2>${p.name}</h2>
-                    <div style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 8px;">
-                        <span><i class="ph ph-folder"></i> ${p.category}</span> &bull; 
-                        <span><i class="ph ph-barcode"></i> SKU: ${p.sku || p.code || 'N/A'}</span>
-                    </div>
-                    <div class="super-badges">
-                        <span class="super-badge ${p.status === 'active' ? 'bg-success-soft' : 'bg-warning-soft'}"><i class="ph ph-activity"></i> ${p.status === 'active' ? 'Activo' : 'Inactivo'}</span>
-                        <span class="super-badge"><i class="ph ph-stack"></i> Stock: ${p.stock}</span>
-                        <span class="super-badge"><i class="ph ph-money"></i> Ganan./und: RD$${Math.round(profitPerUnit).toLocaleString()}</span>
-                        ${metrics ? `<span class="super-badge"><i class="ph ph-percent"></i> Margen: ${metrics.margin.toFixed(1)}%</span>` : ''}
-                        ${metrics ? `<span class="super-badge"><i class="ph ph-arrows-merge"></i> ROI: x${metrics.roi.toFixed(2)}</span>` : ''}
+            <div class="super-header-top flex-between">
+                <div style="display:flex; align-items:center; gap:16px;">
+                    <div class="super-image"><i class="ph ph-package"></i></div>
+                    <div class="super-title">
+                        <h2>${p.name}</h2>
+                        <div style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 8px;">
+                            <span><i class="ph ph-folder"></i> ${p.category}</span> &bull; 
+                            <span><i class="ph ph-barcode"></i> SKU: ${p.sku || p.code || 'N/A'}</span>
+                        </div>
+                        <div class="super-badges">
+                            <span class="super-badge ${p.status === 'active' ? 'bg-success-soft' : 'bg-warning-soft'}"><i class="ph ph-activity"></i> ${p.status === 'active' ? 'Activo' : 'Inactivo'}</span>
+                            <span class="super-badge"><i class="ph ph-stack"></i> Stock: ${p.stock}</span>
+                            <span class="super-badge"><i class="ph ph-money"></i> Ganan./und: RD$${Math.round(profitPerUnit).toLocaleString()}</span>
+                            ${metrics ? `<span class="super-badge"><i class="ph ph-percent"></i> Margen: ${metrics.margin.toFixed(1)}%</span>` : ''}
+                            ${metrics ? `<span class="super-badge"><i class="ph ph-arrows-merge"></i> ROI: x${metrics.roi.toFixed(2)}</span>` : ''}
+                        </div>
                     </div>
                 </div>
+                <button class="btn btn-outline text-primary btn-sm" onclick="generateReport('product', '${p.id}', '${p.name}')" title="Generar Reporte"><i class="ph ph-file-text"></i></button>
             </div>
             
             <div class="stock-bar-container">
@@ -1226,6 +1317,214 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
     }
+
+    // --- REPORTS LOGIC ---
+    window.generateReport = async function(type, productId = null, productName = 'Global') {
+        const title = type === 'global' ? 'Reporte Financiero Global' : `Reporte: ${productName}`;
+        
+        await Swal.fire({
+            title: title,
+            html: `
+                <div style="text-align: left; margin-top: 10px;" id="report-controls">
+                    <label>Selecciona el Período:</label>
+                    <div style="display:flex; gap:10px;">
+                        <select id="swal-report-range" class="swal2-input" onchange="window.updateReportView('${type}', '${productId}')" style="margin:0; flex:1;">
+                            <option value="7">Esta Semana (7 días)</option>
+                            <option value="30" selected>Este Mes (30 días)</option>
+                            <option value="90">Este Trimestre (90 días)</option>
+                            <option value="all">Histórico Completo</option>
+                        </select>
+                        <button class="btn btn-outline text-success" onclick="window.exportExcel('${type}', '${productId}', '${productName}')" title="Descargar Excel"><i class="ph ph-file-xls"></i> Excel</button>
+                    </div>
+                </div>
+                <div id="swal-report-content" style="margin-top:20px; min-height:150px; text-align:left;">
+                    <div class="text-center text-muted"><i class="ph ph-spinner ph-spin" style="font-size: 2rem;"></i><br>Cargando datos...</div>
+                </div>
+            `,
+            width: '700px',
+            showCloseButton: true,
+            showConfirmButton: true,
+            confirmButtonText: '<i class="ph ph-printer"></i> Descargar PDF / Imprimir',
+            showCancelButton: true,
+            cancelButtonText: 'Cerrar',
+            didOpen: () => {
+                window.updateReportView(type, productId);
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                // PDF Export using native print which is styled via @media print
+                window.print();
+            }
+        });
+    };
+
+    window.updateReportView = async function(type, productId) {
+        const contentDiv = document.getElementById('swal-report-content');
+        if(!contentDiv) return;
+        contentDiv.innerHTML = '<div class="text-center text-muted"><i class="ph ph-spinner ph-spin" style="font-size: 2rem;"></i><br>Calculando...</div>';
+        
+        const range = document.getElementById('swal-report-range').value;
+        const cutoffDate = new Date();
+        if (range !== 'all') {
+            cutoffDate.setDate(cutoffDate.getDate() - parseInt(range));
+        }
+
+        let sales = [];
+        let expenses = [];
+        let products = [];
+
+        if (type === 'global') {
+            sales = await db.sales.toArray();
+            expenses = await db.expenses.toArray();
+            products = await db.products.toArray();
+        } else {
+            const pid = Number(productId);
+            sales = await db.sales.where({productId: pid}).toArray();
+            expenses = await db.expenses.where({productId: pid}).toArray();
+            const p = await db.products.get(pid);
+            if (p) products.push(p);
+        }
+
+        // Store un-filtered sales for "Dias sin vender" logic if needed
+        const allTimeSales = sales;
+
+        if (range !== 'all') {
+            sales = sales.filter(s => new Date(s.date) >= cutoffDate);
+            expenses = expenses.filter(e => new Date(e.date) >= cutoffDate);
+        }
+
+        let rev = 0;
+        let cogs = 0;
+        let soldQty = 0;
+        sales.forEach(s => {
+            rev += (s.price * s.qty);
+            cogs += s.totalCost;
+            soldQty += s.qty;
+        });
+
+        let expTot = 0;
+        expenses.forEach(e => expTot += e.amount);
+
+        const net = rev - cogs - expTot;
+        const margin = rev > 0 ? (net / rev) * 100 : 0;
+        const roi = cogs + expTot > 0 ? (rev / (cogs + expTot)) : 0;
+        const ticket = sales.length > 0 ? (rev / sales.length) : 0;
+
+        let totalStock = 0;
+        let totalStockValue = 0;
+        products.forEach(p => {
+            totalStock += p.stock;
+            totalStockValue += p.stock * (p.price); // Valued at retail price
+        });
+
+        // Store globally for Excel Export
+        window.currentReportData = { rev, cogs, soldQty, expTot, net, margin, roi, ticket, totalStock, totalStockValue, sales, expenses, range };
+
+        contentDiv.innerHTML = `
+            <!-- Fila 1 -->
+            <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 12px;">
+                <div class="stat-card-sm" style="background:var(--bg-main);">
+                    <span class="label">Ingresos Brutos</span>
+                    <span class="value text-success">RD$${Math.round(rev).toLocaleString()}</span>
+                </div>
+                <div class="stat-card-sm" style="background:var(--bg-main);">
+                    <span class="label">Ganancia Neta Pura</span>
+                    <span class="value text-primary">RD$${Math.round(net).toLocaleString()}</span>
+                </div>
+                <div class="stat-card-sm" style="background:var(--bg-main);">
+                    <span class="label">Gastos (Periodo)</span>
+                    <span class="value text-danger">RD$${Math.round(expTot).toLocaleString()}</span>
+                </div>
+                <div class="stat-card-sm" style="background:var(--bg-main);">
+                    <span class="label">Uds. Vendidas</span>
+                    <span class="value">${soldQty}</span>
+                </div>
+            </div>
+            
+            <!-- Fila 2 -->
+            <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 20px;">
+                <div class="stat-card-sm" style="background:var(--bg-main);">
+                    <span class="label">Inventario Activo</span>
+                    <span class="value">${totalStock} uds</span>
+                </div>
+                <div class="stat-card-sm" style="background:var(--bg-main);">
+
+                </div>
+                <div class="stat-card-sm" style="background:var(--bg-main);">
+                    <span class="label">Margen Neto Oper.</span>
+                    <span class="value">${margin.toFixed(1)}%</span>
+                </div>
+                <div class="stat-card-sm" style="background:var(--bg-main);">
+                    <span class="label">Ticket Promedio</span>
+                    <span class="value">RD$${Math.round(ticket).toLocaleString()}</span>
+                </div>
+            </div>
+
+            <div style="background: var(--bg-main); padding: 15px; border-radius: 8px; border: 1px solid var(--border-color);">
+                <div class="flex-between mb-2"><span class="text-muted">Costo de Mercancía Vendida (COGS):</span> <strong>RD$${Math.round(cogs).toLocaleString()}</strong></div>
+                <div class="flex-between"><span class="text-muted">Multiplicador ROI (Ganancia sobre inversión):</span> <strong>x${roi.toFixed(2)}</strong></div>
+            </div>
+        `;
+    };
+
+    window.exportExcel = function(type, productId, productName) {
+        if (!window.XLSX) {
+            Swal.fire('Error', 'Librería Excel no cargada. Revisa tu conexión a internet.', 'error');
+            return;
+        }
+        
+        const data = window.currentReportData;
+        if (!data) return;
+
+        // Hoja 1: Resumen
+        const wsResumen = XLSX.utils.aoa_to_sheet([
+            ["Reporte Financiero PRISMAR", productName],
+            ["Periodo (días)", data.range],
+            [],
+            ["MÉTRICA", "VALOR"],
+            ["Ingresos Brutos (RD$)", Math.round(data.rev)],
+            ["Ganancia Neta Pura (RD$)", Math.round(data.net)],
+            ["Gastos del Periodo (RD$)", Math.round(data.expTot)],
+            ["Costo Mercancía Vendida (COGS)", Math.round(data.cogs)],
+            ["Unidades Vendidas", data.soldQty],
+            ["Inventario Activo (uds)", data.totalStock],
+
+            ["Margen Neto Operativo (%)", data.margin.toFixed(2)],
+            ["ROI Multiplicador", data.roi.toFixed(2)],
+            ["Ticket Promedio (RD$)", Math.round(data.ticket)]
+        ]);
+
+        // Hoja 2: Ventas
+        const salesRows = data.sales.map(s => ({
+            Fecha: new Date(s.date).toLocaleDateString(),
+            Cliente: s.customer,
+            Metodo_Pago: s.paymentMethod || 'Efectivo',
+            Cantidad: s.qty,
+            Ingreso_Total: s.price * s.qty,
+            Costo_Total: s.totalCost,
+            Ganancia: (s.price * s.qty) - s.totalCost,
+            Origen: s.source
+        }));
+        const wsVentas = XLSX.utils.json_to_sheet(salesRows);
+
+        // Hoja 3: Gastos
+        const expensesRows = data.expenses.map(e => ({
+            Fecha: new Date(e.date).toLocaleDateString(),
+            Categoria: e.type,
+            Monto: e.amount,
+            Descripcion: e.description || ''
+        }));
+        const wsGastos = XLSX.utils.json_to_sheet(expensesRows);
+
+        // Crear Libro
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, wsResumen, "Resumen");
+        XLSX.utils.book_append_sheet(wb, wsVentas, "Ventas");
+        XLSX.utils.book_append_sheet(wb, wsGastos, "Gastos");
+
+        // Descargar
+        XLSX.writeFile(wb, `Reporte_PRISMAR_${productName}_${new Date().toISOString().split('T')[0]}.xlsx`);
+    };
 
     // Initialize first view
     initDashboard();
