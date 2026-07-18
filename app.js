@@ -1,4 +1,29 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // --- Security & Login ---
+    const loginScreen = document.getElementById('login-screen');
+    const formLogin = document.getElementById('form-login');
+    const loginError = document.getElementById('login-error');
+
+    if(sessionStorage.getItem('prismar_auth') === 'true') {
+        if(loginScreen) loginScreen.classList.add('hidden');
+    }
+
+    if(formLogin) {
+        formLogin.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const pin = document.getElementById('login-pin').value;
+            if (pin === '1290') {
+                sessionStorage.setItem('prismar_auth', 'true');
+                loginScreen.classList.add('hidden');
+                initDashboard(); // Refrescar por si acaso
+            } else {
+                loginError.style.display = 'block';
+                document.getElementById('login-pin').value = '';
+                setTimeout(() => loginError.style.display = 'none', 3000);
+            }
+        });
+    }
+
     // --- UI State Management ---
     const sidebar = document.getElementById('sidebar');
     const btnToggleSidebar = document.getElementById('btn-toggle-sidebar');
