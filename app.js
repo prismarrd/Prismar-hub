@@ -150,6 +150,20 @@ document.addEventListener('DOMContentLoaded', () => {
         tabContents[0].classList.add('active');
     }
 
+    // --- Dirty-form tracking ---
+    let _formDirty = false;
+
+    function markFormClean() { _formDirty = false; }
+    function markFormDirty() { _formDirty = true; }
+
+    // Listen to any input/change inside the product form,
+    // but IGNORE the bundle selector (it has its own handler that manages state)
+    formProduct.addEventListener('input', markFormDirty);
+    formProduct.addEventListener('change', (e) => {
+        if (e.target.id === 'prod-bundle') return; // handled separately
+        markFormDirty();
+    });
+
     function openProductModal() {
         formProduct.reset();
         document.getElementById('prod-id').value = '';
@@ -159,6 +173,7 @@ document.addEventListener('DOMContentLoaded', () => {
         _lastBundle = document.getElementById('prod-bundle').value || '1';
         updateProductCalc();
         resetModalTabs();
+        markFormClean();
         
         // Hide Super Header & Quick Actions for new products
         document.getElementById('super-header-container').style.display = 'none';
@@ -189,14 +204,33 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function closeProductModal() {
+        _formDirty = false;
         modalProduct.classList.remove('active');
         setTimeout(() => {
             modalProduct.style.display = 'none';
         }, 200);
     }
 
+    async function requestCloseModal() {
+        if (!_formDirty) {
+            closeProductModal();
+            return;
+        }
+        const { isConfirmed } = await Swal.fire({
+            title: '¿Salir sin guardar?',
+            text: 'Tienes cambios sin guardar. Si sales ahora se perderán.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#EF4444',
+            confirmButtonText: 'Sí, salir',
+            cancelButtonText: 'Seguir editando'
+        });
+        if (isConfirmed) closeProductModal();
+    }
+
     if(btnNewProduct) btnNewProduct.addEventListener('click', openProductModal);
-    if(btnCloseProductModal) btnCloseProductModal.addEventListener('click', closeProductModal);
+    // X button uses requestCloseModal to ask confirmation if there are unsaved changes
+    if(btnCloseProductModal) btnCloseProductModal.addEventListener('click', () => requestCloseModal());
 
     // Modal only closes via the X button — NO outside-click dismiss
 
@@ -304,12 +338,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if(inputBundle) inputBundle.addEventListener('change', autoGenerateCodes);
 
     // --- Cost Structure per Presentation ---
-    // When user switches the bundle selector we save current fields into
-    // a per-bundle map and load the saved values for the new selection.
-    let _costStructureMap = {};  // keyed by bundle value: '1','2','3','pack'
+    // Each bundle ('1','2','3','pack') has its OWN independent cost/price snapshot.
+    // The map is updated in REAL TIME as the user types, guaranteeing no cross-contamination.
+    let _costStructureMap = {};
     let _lastBundle = null;
 
+    const COST_FIELD_IDS = ['prod-cost','prod-price','prod-ads','prod-pack','prod-ship','prod-comm','prod-other'];
+
     function readCostFieldsToMap(bundleKey) {
+        if (!bundleKey) return;
         _costStructureMap[bundleKey] = {
             cost:  parseFloat(document.getElementById('prod-cost').value)  || 0,
             price: parseFloat(document.getElementById('prod-price').value) || 0,
@@ -324,39 +361,75 @@ document.addEventListener('DOMContentLoaded', () => {
     function writeCostFieldsFromMap(bundleKey) {
         const d = _costStructureMap[bundleKey];
         if (!d) {
-            // No saved data yet — clear to 0 so user starts fresh for this presentation
-            ['prod-cost','prod-price','prod-ads','prod-pack','prod-ship','prod-comm','prod-other']
-                .forEach(id => { document.getElementById(id).value = 0; });
+            // No data for this bundle yet → start completely fresh (zeros)
+            COST_FIELD_IDS.forEach(id => { document.getElementById(id).value = ''; });
         } else {
-            document.getElementById('prod-cost').value  = d.cost;
-            document.getElementById('prod-price').value = d.price;
-            document.getElementById('prod-ads').value   = d.ads;
-            document.getElementById('prod-pack').value  = d.pack;
-            document.getElementById('prod-ship').value  = d.ship;
-            document.getElementById('prod-comm').value  = d.comm;
-            document.getElementById('prod-other').value = d.other;
+            document.getElementById('prod-cost').value  = d.cost  || '';
+            document.getElementById('prod-price').value = d.price || '';
+            document.getElementById('prod-ads').value   = d.ads   || '';
+            document.getElementById('prod-pack').value  = d.pack  || '';
+            document.getElementById('prod-ship').value  = d.ship  || '';
+            document.getElementById('prod-comm').value  = d.comm  || '';
+            document.getElementById('prod-other').value = d.other || '';
         }
         updateProductCalc();
     }
 
+    // ★ KEY FIX: Snapshot the current bundle's data on EVERY keystroke in cost/price fields.
+    // This ensures the map is always up-to-date and switching bundles never loses data.
+    COST_FIELD_IDS.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('input', () => {
+                if (_lastBundle !== null) readCostFieldsToMap(_lastBundle);
+            });
+        }
+    });
+
     if (inputBundle) {
-        inputBundle.addEventListener('change', () => {
-            // Save data of the presentation we are LEAVING
+        inputBundle.addEventListener('change', (e) => {
+            e.stopPropagation();
+
+            // 1. Snapshot the presentation we're LEAVING (already up-to-date from real-time listener)
             if (_lastBundle !== null) readCostFieldsToMap(_lastBundle);
-            // Load data of the new presentation
+
+            // 2. Load the data for the new presentation
             const newBundle = inputBundle.value;
             writeCostFieldsFromMap(newBundle);
             _lastBundle = newBundle;
+
+            markFormDirty();
             autoGenerateCodes();
         });
-        // Track the initial value
         _lastBundle = inputBundle.value;
     }
 
-    // --- Product Form Save ---
+
+    // --- Product Form Save (Ajustes) ---
     if(formProduct) {
         formProduct.addEventListener('submit', async (e) => {
         e.preventDefault();
+
+        // Require PIN C1290 to save settings changes
+        const isEdit = !!document.getElementById('prod-id').value;
+        if (isEdit) {
+            const { value: pin } = await Swal.fire({
+                title: 'Autorización Requerida',
+                html: `<p style="color:#9CA3AF;margin-bottom:8px;">Introduce el PIN para guardar los cambios en Ajustes:</p>`,
+                input: 'password',
+                inputPlaceholder: 'PIN de Configuración',
+                inputAttributes: { maxlength: 5 },
+                showCancelButton: true,
+                confirmButtonText: 'Verificar',
+                cancelButtonText: 'Cancelar',
+                confirmButtonColor: '#2563EB'
+            });
+            if (!pin) return;
+            if (pin !== 'C1290') {
+                Swal.fire({ icon: 'error', title: 'PIN incorrecto', text: 'El PIN de Configuración es incorrecto.', timer: 2000, showConfirmButton: false });
+                return;
+            }
+        }
 
         // Save current presentation fields before submitting
         const currentBundle = document.getElementById('prod-bundle').value;
@@ -397,6 +470,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 await db.products.add(product);
                 Swal.fire({icon: 'success', title: 'Guardado', text: 'Producto creado exitosamente.', timer: 1500, showConfirmButton: false});
             }
+            markFormClean();
             closeProductModal();
             loadProductsTable();
             initDashboard();
@@ -557,6 +631,7 @@ document.addEventListener('DOMContentLoaded', () => {
         loadExpenses(p.id);
         loadMetrics(p.id);
 
+        markFormClean(); // No unsaved changes right after loading
         modalProduct.style.display = 'flex';
         void modalProduct.offsetWidth;
         modalProduct.classList.add('active');
@@ -615,13 +690,52 @@ document.addEventListener('DOMContentLoaded', () => {
             if (isOpening) {
                 const prodId = parseInt(document.getElementById('prod-id').value);
                 const p = await db.products.get(prodId);
-                const qtyInput = document.getElementById('lay-qty');
+                
+                // --- Layaway Quantity (Combo) ---
+                // Reemplazamos el input numérico por un <select> que usa las mismas opciones
+                // que el selector de bundle en la sección de Ajustes.
+                const qtyInputOriginal = document.getElementById('lay-qty');
                 const totalInput = document.getElementById('lay-total');
-                
-                totalInput.value = p.price * parseInt(qtyInput.value || 1);
-                
-                qtyInput.oninput = () => {
-                    totalInput.value = p.price * parseInt(qtyInput.value || 1);
+                let qtyInput = qtyInputOriginal;
+                if (qtyInput && qtyInput.tagName.toLowerCase() !== 'select') {
+                    const select = document.createElement('select');
+                    select.id = 'lay-qty';
+                    // Copiamos clases/estilos básicos (si existen)
+                    select.className = qtyInput.className;
+                    // Opciones de bundle (configurables mediante el mismo mapa)
+                    const bundleOptions = { '1': '1 unidad', '2': '2 unidades (combo)', '3': '3 unidades (combo)', 'pack': 'Pack' };
+                    Object.keys(bundleOptions).forEach(key => {
+                        const opt = document.createElement('option');
+                        opt.value = key;
+                        opt.textContent = bundleOptions[key];
+                        select.appendChild(opt);
+                    });
+                    qtyInputOriginal.parentNode.replaceChild(select, qtyInputOriginal);
+                    qtyInput = select;
+                }
+
+                // Lee precio y bundle desde Ajustes (en vivo)
+                const livePrice  = parseFloat(document.getElementById('prod-price').value) || 0;
+                const liveBundle = document.getElementById('prod-bundle').value || '1';
+                const bundleQtyMap = { '1': 1, '2': 2, '3': 3, 'pack': 1 };
+                const bundleSize  = bundleQtyMap[liveBundle] || 1;
+
+                // Pre‑selecciona la opción correspondiente en el <select>
+                if (qtyInput) qtyInput.value = liveBundle;
+
+                // Total = precio del combo × número de combos
+                totalInput.value = Math.round(livePrice * 100) / 100;
+                qtyInput.dataset.bundleSize = bundleSize;
+
+                // Recalcula total y sincroniza bundle al cambiar la cantidad
+                qtyInput.onchange = () => {
+                    const combos = parseInt(qtyInput.value) || 1;
+                    totalInput.value = Math.round(livePrice * combos * 100) / 100;
+                    // Sincroniza el bundle selector de Ajustes
+                    const prodBundleSelect = document.getElementById('prod-bundle');
+                    if (prodBundleSelect && ['1','2','3','pack'].includes(String(combos))) {
+                        prodBundleSelect.value = String(combos);
+                    }
                 };
 
                 const expectedDateInput = document.getElementById('lay-expected-date');
@@ -639,17 +753,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('lay-disc-amount-wrap').style.display = 'none';
                 document.getElementById('lay-disc-percent').value = 10;
 
-                // Toggle listeners
+                // Toggle listeners: only show/hide fields — do NOT touch Total Acordado
                 document.querySelectorAll('input[name="lay-ship-apply"]').forEach(r => {
                     r.onchange = () => {
-                        const wrap = document.getElementById('lay-ship-amount-wrap');
-                        wrap.style.display = r.value === 'yes' ? 'block' : 'none';
+                        document.getElementById('lay-ship-amount-wrap').style.display = r.value === 'yes' ? 'block' : 'none';
                     };
                 });
                 document.querySelectorAll('input[name="lay-disc-apply"]').forEach(r => {
                     r.onchange = () => {
-                        const wrap = document.getElementById('lay-disc-amount-wrap');
-                        wrap.style.display = r.value === 'yes' ? 'block' : 'none';
+                        document.getElementById('lay-disc-amount-wrap').style.display = r.value === 'yes' ? 'block' : 'none';
                     };
                 });
             }
@@ -662,12 +774,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const prodId = parseInt(document.getElementById('prod-id').value);
             if(!prodId) return;
 
-            const qty = parseInt(document.getElementById('lay-qty').value) || 1;
-            let totalAmount = parseFloat(document.getElementById('lay-total').value);
+            const combos = parseInt(document.getElementById('lay-qty').value) || 1;
+            const bundleSize = parseInt(document.getElementById('lay-qty').dataset.bundleSize) || 1;
+            const physicalUnits = combos * bundleSize; // real units to deduct from stock
+
+            const totalAmount = parseFloat(document.getElementById('lay-total').value);
 
             const p = await db.products.get(prodId);
-            if(p.stock < qty) {
-                Swal.fire('Atención', `Solo tienes ${p.stock} unidades en stock.`, 'warning');
+            if(p.stock < physicalUnits) {
+                Swal.fire('Atención', `Solo tienes ${p.stock} unidades en stock. Necesitas ${physicalUnits}.`, 'warning');
                 return;
             }
 
@@ -680,41 +795,36 @@ document.addEventListener('DOMContentLoaded', () => {
             // --- Descuento ---
             const discApply = document.querySelector('input[name="lay-disc-apply"]:checked').value === 'yes';
             const discPercent = discApply ? (parseFloat(document.getElementById('lay-disc-percent').value) || 10) : 0;
-
-            // Apply discount to totalAmount
-            if (discApply && discPercent > 0) {
-                totalAmount = totalAmount * (1 - discPercent / 100);
-            }
-
-            // Shipping cost is added to our cost (we pay it), not to the client total
-            const extraCostPerUnit = shipApply ? (shipAmount / qty) : 0;
+            const discAmount = discApply && discPercent > 0 ? totalAmount * (discPercent / 100) : 0;
 
             const layaway = {
                 productId: prodId,
                 customer: document.getElementById('lay-customer').value,
                 phone: document.getElementById('lay-phone').value || '',
-                qty: qty,
+                qty: combos,              // number of combos
+                bundleSize: bundleSize,    // units per combo (1, 2, 3...)
+                physicalQty: physicalUnits, // total physical units
                 date: new Date().toISOString(),
                 expectedDate: expectedDate || null,
                 status: 'pending',
-                totalAmount: Math.round(totalAmount * 100) / 100,
+                totalAmount: totalAmount,
                 shipAmount: shipAmount,
                 discPercent: discPercent,
-                extraCostPerUnit: extraCostPerUnit
+                discAmount: discAmount
             };
 
             await db.layaways.add(layaway);
             formLayaway.reset();
-            // Reset toggles visually
             document.getElementById('lay-ship-no').checked = true;
             document.getElementById('lay-ship-amount-wrap').style.display = 'none';
             document.getElementById('lay-disc-no').checked = true;
             document.getElementById('lay-disc-amount-wrap').style.display = 'none';
             formLayawayContainer.style.display = 'none';
             loadLayaways(prodId);
+            const comboLabel = bundleSize > 1 ? ` (${combos} combo${combos>1?'s':''} × ${bundleSize} uds)` : '';
             const shipMsg = shipApply ? ` • Envío: RD$${shipAmount}` : '';
-            const discMsg = discApply ? ` • Descuento: ${discPercent}%` : '';
-            Swal.fire({icon: 'success', title: 'Pedido Registrado', html: `Total: RD$${(Math.round(totalAmount * 100)/100).toLocaleString()}${shipMsg}${discMsg}`, timer: 2000, showConfirmButton: false});
+            const discMsg = discApply ? ` • Descuento: ${discPercent}% (-RD$${Math.round(discAmount)})` : '';
+            Swal.fire({icon: 'success', title: 'Pedido Registrado', html: `Total: <b>RD$${totalAmount.toLocaleString()}</b>${comboLabel}${shipMsg}${discMsg}`, timer: 2500, showConfirmButton: false});
         });
     }
 
@@ -809,11 +919,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (result.isConfirmed) {
             const l = await db.layaways.get(layawayId);
             await db.layaways.update(layawayId, { status: 'cancelled' });
-            // Restore stock
+            // Restore stock — use physical units (qty × bundleSize)
             const p = await db.products.get(productId);
             if (p && l) {
-                await db.products.update(productId, { stock: p.stock + l.qty });
-                document.getElementById('prod-stock').value = p.stock + l.qty;
+                const units = l.physicalQty || (l.qty * (l.bundleSize || 1));
+                await db.products.update(productId, { stock: p.stock + units });
+                document.getElementById('prod-stock').value = p.stock + units;
             }
             loadLayaways(productId);
             loadMetrics(productId);
@@ -850,27 +961,39 @@ document.addEventListener('DOMContentLoaded', () => {
             const paymentMethod = result.value.paymentMethod;
             const l = await db.layaways.get(layawayId);
             const p = await db.products.get(productId);
-            
-            if(p.stock < l.qty) {
-                Swal.fire('Error', 'No hay stock suficiente para esta venta.', 'error');
+
+            // Physical units = combos × bundleSize
+            const units = l.physicalQty || (l.qty * (l.bundleSize || 1));
+
+            if(p.stock < units) {
+                Swal.fire('Error', `No hay stock suficiente. Necesitas ${units} unidades.`, 'error');
                 return;
             }
 
-            // Deduct stock
-            await db.products.update(productId, { stock: p.stock - l.qty });
-            
+            // Deduct physical units from stock
+            await db.products.update(productId, { stock: p.stock - units });
+
             // Mark layaway sold
             await db.layaways.update(layawayId, { status: 'sold' });
 
-            // Create Sale record (using the layaway agreed total amount instead of current product price)
-            const unitPrice = l.totalAmount / l.qty;
+            // Sale record — revenue per combo, cost per combo
+            const pricePerCombo = l.totalAmount / l.qty;
+            const shipPerCombo  = l.shipAmount  ? (l.shipAmount / l.qty) : 0;
+            const discPerCombo  = l.discAmount  ? (l.discAmount / l.qty) : 0;
+            // Base cost from Ajustes (already covers the combo)
+            const baseCostCombo = p.cost + p.ads + p.pack + p.ship + p.comm + p.other;
+
             await db.sales.add({
                 productId: productId,
                 customer: l.customer,
-                qty: l.qty,
-                price: unitPrice,
+                qty: units,  // physical units for reports/stock consistency
+                price: l.totalAmount / units,  // price per physical unit
                 paymentMethod: paymentMethod,
-                totalCost: (p.cost + p.ads + p.pack + p.ship + p.comm + p.other) * l.qty,
+                totalCost: (baseCostCombo + shipPerCombo + discPerCombo) * l.qty,
+                shipAmount: l.shipAmount || 0,
+                discPercent: l.discPercent || 0,
+                discAmount: l.discAmount || 0,
+                bundleSize: l.bundleSize || 1,
                 date: new Date().toISOString(),
                 source: 'layaway'
             });
@@ -878,10 +1001,10 @@ document.addEventListener('DOMContentLoaded', () => {
             loadLayaways(productId);
             loadSales(productId);
             loadMetrics(productId);
-            loadProductsTable(); // Refresh background table
-            initDashboard(); // Refresh stats
-            
-            document.getElementById('prod-stock').value = p.stock - l.qty; // Update form view
+            loadProductsTable();
+            initDashboard();
+
+            document.getElementById('prod-stock').value = p.stock - units;
             Swal.fire({icon: 'success', title: '¡Venta completada!', timer: 1500, showConfirmButton: false});
         }
     };
@@ -1638,87 +1761,137 @@ document.addEventListener('DOMContentLoaded', () => {
             if (p) products.push(p);
         }
 
-        // Store un-filtered sales for "Dias sin vender" logic if needed
-        const allTimeSales = sales;
-
         if (range !== 'all') {
             sales = sales.filter(s => new Date(s.date) >= cutoffDate);
             expenses = expenses.filter(e => new Date(e.date) >= cutoffDate);
         }
 
-        let rev = 0;
-        let cogs = 0;
-        let soldQty = 0;
+        let rev = 0, cogs = 0, soldQty = 0, txCount = 0;
         sales.forEach(s => {
             rev += (s.price * s.qty);
             cogs += s.totalCost;
             soldQty += s.qty;
+            txCount++;
         });
 
         let expTot = 0;
         expenses.forEach(e => expTot += e.amount);
 
         const net = rev - cogs - expTot;
+        const gross = rev - cogs;
         const margin = rev > 0 ? (net / rev) * 100 : 0;
+        const grossMargin = rev > 0 ? (gross / rev) * 100 : 0;
         const roi = cogs + expTot > 0 ? (rev / (cogs + expTot)) : 0;
-        const ticket = sales.length > 0 ? (rev / sales.length) : 0;
+        const ticket = txCount > 0 ? (rev / txCount) : 0;
 
         let totalStock = 0;
-        let totalStockValue = 0;
-        products.forEach(p => {
-            totalStock += p.stock;
-            totalStockValue += p.stock * (p.price); // Valued at retail price
-        });
+        products.forEach(p => { totalStock += p.stock; });
+
+        // Pending layaways value
+        const allLayaways = type === 'global'
+            ? await db.layaways.where({ status: 'pending' }).toArray()
+            : await db.layaways.where({ productId: Number(productId), status: 'pending' }).toArray();
+        const pendingLayawayValue = allLayaways.reduce((acc, l) => acc + l.totalAmount, 0);
+        const pendingLayawayCount = allLayaways.length;
+
+        // Recent sales (last 5)
+        const recentSales = [...sales].sort((a,b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
 
         // Store globally for Excel Export
-        window.currentReportData = { rev, cogs, soldQty, expTot, net, margin, roi, ticket, totalStock, totalStockValue, sales, expenses, range };
+        window.currentReportData = { rev, cogs, soldQty, expTot, net, gross, grossMargin, margin, roi, ticket, totalStock, sales, expenses, range, pendingLayawayValue, pendingLayawayCount };
+
+        const fmt = n => Math.round(n).toLocaleString();
+        const netColor = net >= 0 ? '#10B981' : '#EF4444';
+        const rangeLabel = range === '7' ? '7 días' : range === '30' ? '30 días' : range === '90' ? '90 días' : 'Histórico';
+
+        const recentSalesRows = recentSales.length > 0
+            ? recentSales.map(s => `
+                <tr>
+                    <td style="padding:6px 8px;font-size:0.82rem;color:#9CA3AF;">${new Date(s.date).toLocaleDateString()}</td>
+                    <td style="padding:6px 8px;font-size:0.82rem;">${s.customer}</td>
+                    <td style="padding:6px 8px;font-size:0.82rem;text-align:center;">${s.qty}</td>
+                    <td style="padding:6px 8px;font-size:0.82rem;color:#3B82F6;">RD$${fmt(s.price * s.qty)}</td>
+                    <td style="padding:6px 8px;font-size:0.82rem;color:${(s.price*s.qty - s.totalCost)>=0?'#10B981':'#EF4444'}">RD$${fmt(s.price*s.qty - s.totalCost)}</td>
+                </tr>`).join('')
+            : `<tr><td colspan="5" style="text-align:center;color:#9CA3AF;padding:12px;">Sin ventas en este período</td></tr>`;
 
         contentDiv.innerHTML = `
-            <!-- Fila 1 -->
-            <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 12px;">
-                <div class="stat-card-sm" style="background:var(--bg-main);">
-                    <span class="label">Ingresos Brutos</span>
-                    <span class="value text-success">RD$${Math.round(rev).toLocaleString()}</span>
+            <!-- KPI Grid -->
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:14px;">
+                <div style="background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.2);border-radius:8px;padding:12px;text-align:center;">
+                    <div style="font-size:0.72rem;color:#9CA3AF;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Ingresos Brutos</div>
+                    <div style="font-size:1.1rem;font-weight:700;color:#10B981;">RD$${fmt(rev)}</div>
                 </div>
-                <div class="stat-card-sm" style="background:var(--bg-main);">
-                    <span class="label">Ganancia Neta Pura</span>
-                    <span class="value text-primary">RD$${Math.round(net).toLocaleString()}</span>
+                <div style="background:rgba(37,99,235,0.08);border:1px solid rgba(37,99,235,0.2);border-radius:8px;padding:12px;text-align:center;">
+                    <div style="font-size:0.72rem;color:#9CA3AF;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Ganancia Neta</div>
+                    <div style="font-size:1.1rem;font-weight:700;color:${netColor};">RD$${fmt(net)}</div>
                 </div>
-                <div class="stat-card-sm" style="background:var(--bg-main);">
-                    <span class="label">Gastos (Periodo)</span>
-                    <span class="value text-danger">RD$${Math.round(expTot).toLocaleString()}</span>
+                <div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:8px;padding:12px;text-align:center;">
+                    <div style="font-size:0.72rem;color:#9CA3AF;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Gastos Operativos</div>
+                    <div style="font-size:1.1rem;font-weight:700;color:#EF4444;">RD$${fmt(expTot)}</div>
                 </div>
-                <div class="stat-card-sm" style="background:var(--bg-main);">
-                    <span class="label">Uds. Vendidas</span>
-                    <span class="value">${soldQty}</span>
-                </div>
-            </div>
-            
-            <!-- Fila 2 -->
-            <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 20px;">
-                <div class="stat-card-sm" style="background:var(--bg-main);">
-                    <span class="label">Inventario Activo</span>
-                    <span class="value">${totalStock} uds</span>
-                </div>
-                <div class="stat-card-sm" style="background:var(--bg-main);">
-
-                </div>
-                <div class="stat-card-sm" style="background:var(--bg-main);">
-                    <span class="label">Margen Neto Oper.</span>
-                    <span class="value">${margin.toFixed(1)}%</span>
-                </div>
-                <div class="stat-card-sm" style="background:var(--bg-main);">
-                    <span class="label">Ticket Promedio</span>
-                    <span class="value">RD$${Math.round(ticket).toLocaleString()}</span>
+                <div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:8px;padding:12px;text-align:center;">
+                    <div style="font-size:0.72rem;color:#9CA3AF;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Uds. Vendidas</div>
+                    <div style="font-size:1.1rem;font-weight:700;color:#F59E0B;">${soldQty}</div>
                 </div>
             </div>
 
-            <div style="background: var(--bg-main); padding: 15px; border-radius: 8px; border: 1px solid var(--border-color);">
-                <div class="flex-between mb-2"><span class="text-muted">Costo de Mercancía Vendida (COGS):</span> <strong>RD$${Math.round(cogs).toLocaleString()}</strong></div>
-                <div class="flex-between"><span class="text-muted">Multiplicador ROI (Ganancia sobre inversión):</span> <strong>x${roi.toFixed(2)}</strong></div>
+            <!-- Secondary Metrics -->
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:14px;">
+                <div style="background:var(--bg-main,#0B0F19);border:1px solid #374151;border-radius:8px;padding:10px;text-align:center;">
+                    <div style="font-size:0.72rem;color:#9CA3AF;margin-bottom:3px;">Margen Neto</div>
+                    <div style="font-size:1rem;font-weight:600;color:${margin>=20?'#10B981':'#F59E0B'};">${margin.toFixed(1)}%</div>
+                </div>
+                <div style="background:var(--bg-main,#0B0F19);border:1px solid #374151;border-radius:8px;padding:10px;text-align:center;">
+                    <div style="font-size:0.72rem;color:#9CA3AF;margin-bottom:3px;">ROI</div>
+                    <div style="font-size:1rem;font-weight:600;">x${roi.toFixed(2)}</div>
+                </div>
+                <div style="background:var(--bg-main,#0B0F19);border:1px solid #374151;border-radius:8px;padding:10px;text-align:center;">
+                    <div style="font-size:0.72rem;color:#9CA3AF;margin-bottom:3px;">Ticket Promedio</div>
+                    <div style="font-size:1rem;font-weight:600;">RD$${fmt(ticket)}</div>
+                </div>
+                <div style="background:var(--bg-main,#0B0F19);border:1px solid #374151;border-radius:8px;padding:10px;text-align:center;">
+                    <div style="font-size:0.72rem;color:#9CA3AF;margin-bottom:3px;">Apartados Activos</div>
+                    <div style="font-size:1rem;font-weight:600;color:#A855F7;">${pendingLayawayCount} <small style="font-size:0.7rem">(RD$${fmt(pendingLayawayValue)})</small></div>
+                </div>
+            </div>
+
+            <!-- COGS Bar -->
+            <div style="background:var(--bg-main,#0B0F19);border:1px solid #374151;border-radius:8px;padding:12px;margin-bottom:14px;">
+                <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+                    <span style="font-size:0.8rem;color:#9CA3AF;">Costo Mercancía Vendida (COGS)</span>
+                    <strong>RD$${fmt(cogs)}</strong>
+                </div>
+                <div style="height:6px;background:#374151;border-radius:4px;overflow:hidden;">
+                    <div style="height:100%;width:${rev > 0 ? Math.min(100,(cogs/rev)*100) : 0}%;background:#EF4444;border-radius:4px;"></div>
+                </div>
+                <div style="display:flex;justify-content:space-between;margin-top:8px;">
+                    <span style="font-size:0.8rem;color:#9CA3AF;">Ganancia Bruta (antes de gastos op.)</span>
+                    <strong style="color:#10B981;">RD$${fmt(gross)} (${grossMargin.toFixed(1)}%)</strong>
+                </div>
+            </div>
+
+            <!-- Recent Sales Table -->
+            <div style="font-size:0.78rem;font-weight:700;color:#9CA3AF;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">
+                Ventas Recientes — ${rangeLabel}
+            </div>
+            <div style="overflow-x:auto;border-radius:8px;border:1px solid #374151;">
+                <table style="width:100%;border-collapse:collapse;">
+                    <thead>
+                        <tr style="background:#1F2937;">
+                            <th style="padding:8px;text-align:left;font-size:0.75rem;color:#9CA3AF;">Fecha</th>
+                            <th style="padding:8px;text-align:left;font-size:0.75rem;color:#9CA3AF;">Cliente</th>
+                            <th style="padding:8px;text-align:center;font-size:0.75rem;color:#9CA3AF;">Uds</th>
+                            <th style="padding:8px;text-align:left;font-size:0.75rem;color:#9CA3AF;">Ingreso</th>
+                            <th style="padding:8px;text-align:left;font-size:0.75rem;color:#9CA3AF;">Ganancia</th>
+                        </tr>
+                    </thead>
+                    <tbody>${recentSalesRows}</tbody>
+                </table>
             </div>
         `;
     };
+
 
     window.exportExcel = function(type, productId, productName) {
         if (!window.XLSX) {
