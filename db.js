@@ -1,10 +1,11 @@
 const firebaseConfig = {
-  apiKey: "AIzaSyCTs_2DWLiNZLY7xVa8gOjxhoLU3UuXrvM",
-  authDomain: "prismar-erp.firebaseapp.com",
-  projectId: "prismar-erp",
-  storageBucket: "prismar-erp.firebasestorage.app",
-  messagingSenderId: "516461698344",
-  appId: "1:516461698344:web:15055593915ce60b77841d"
+  apiKey: "AIzaSyBP-4A59M-yoj0euyjdiMhMJKTiXGOGgmY",
+  authDomain: "prisma-hub-cd693.firebaseapp.com",
+  projectId: "prisma-hub-cd693",
+  storageBucket: "prisma-hub-cd693.firebasestorage.app",
+  messagingSenderId: "791883243014",
+  appId: "1:791883243014:web:6b74199c57a596d5742d87",
+  measurementId: "G-7H3LRRLZV3"
 };
 
 // Inicializar Firebase
