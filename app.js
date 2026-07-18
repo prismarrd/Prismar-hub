@@ -154,6 +154,9 @@ document.addEventListener('DOMContentLoaded', () => {
         formProduct.reset();
         document.getElementById('prod-id').value = '';
         document.getElementById('modal-title').textContent = 'Registrar Producto';
+        // Reset cost-structure map for a fresh product
+        _costStructureMap = {};
+        _lastBundle = document.getElementById('prod-bundle').value || '1';
         updateProductCalc();
         resetModalTabs();
         
@@ -195,10 +198,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if(btnNewProduct) btnNewProduct.addEventListener('click', openProductModal);
     if(btnCloseProductModal) btnCloseProductModal.addEventListener('click', closeProductModal);
 
-    // Close on overlay click
-    window.addEventListener('click', (e) => {
-        if(e.target === modalProduct) closeProductModal();
-    });
+    // Modal only closes via the X button — NO outside-click dismiss
 
     // --- Quick Create Dropdown ---
     const btnQuickCreate = document.getElementById('btn-quick-create');
@@ -221,15 +221,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if(quickNewProduct) {
         quickNewProduct.addEventListener('click', () => {
-            switchView('products'); // Asegura que vayamos a la vista de productos
+            switchView('products');
             openProductModal();
         });
     }
-
-    // Close modal on overlay click
-    window.addEventListener('click', (e) => {
-        if(e.target === modalProduct) closeProductModal();
-    });
 
     // --- Product Calculator Logic ---
     const calcInputs = document.querySelectorAll('.calc-input');
@@ -308,14 +303,69 @@ document.addEventListener('DOMContentLoaded', () => {
     if(inputCategory) inputCategory.addEventListener('change', autoGenerateCodes);
     if(inputBundle) inputBundle.addEventListener('change', autoGenerateCodes);
 
+    // --- Cost Structure per Presentation ---
+    // When user switches the bundle selector we save current fields into
+    // a per-bundle map and load the saved values for the new selection.
+    let _costStructureMap = {};  // keyed by bundle value: '1','2','3','pack'
+    let _lastBundle = null;
+
+    function readCostFieldsToMap(bundleKey) {
+        _costStructureMap[bundleKey] = {
+            cost:  parseFloat(document.getElementById('prod-cost').value)  || 0,
+            price: parseFloat(document.getElementById('prod-price').value) || 0,
+            ads:   parseFloat(document.getElementById('prod-ads').value)   || 0,
+            pack:  parseFloat(document.getElementById('prod-pack').value)  || 0,
+            ship:  parseFloat(document.getElementById('prod-ship').value)  || 0,
+            comm:  parseFloat(document.getElementById('prod-comm').value)  || 0,
+            other: parseFloat(document.getElementById('prod-other').value) || 0,
+        };
+    }
+
+    function writeCostFieldsFromMap(bundleKey) {
+        const d = _costStructureMap[bundleKey];
+        if (!d) {
+            // No saved data yet — clear to 0 so user starts fresh for this presentation
+            ['prod-cost','prod-price','prod-ads','prod-pack','prod-ship','prod-comm','prod-other']
+                .forEach(id => { document.getElementById(id).value = 0; });
+        } else {
+            document.getElementById('prod-cost').value  = d.cost;
+            document.getElementById('prod-price').value = d.price;
+            document.getElementById('prod-ads').value   = d.ads;
+            document.getElementById('prod-pack').value  = d.pack;
+            document.getElementById('prod-ship').value  = d.ship;
+            document.getElementById('prod-comm').value  = d.comm;
+            document.getElementById('prod-other').value = d.other;
+        }
+        updateProductCalc();
+    }
+
+    if (inputBundle) {
+        inputBundle.addEventListener('change', () => {
+            // Save data of the presentation we are LEAVING
+            if (_lastBundle !== null) readCostFieldsToMap(_lastBundle);
+            // Load data of the new presentation
+            const newBundle = inputBundle.value;
+            writeCostFieldsFromMap(newBundle);
+            _lastBundle = newBundle;
+            autoGenerateCodes();
+        });
+        // Track the initial value
+        _lastBundle = inputBundle.value;
+    }
+
     // --- Product Form Save ---
     if(formProduct) {
         formProduct.addEventListener('submit', async (e) => {
         e.preventDefault();
-        
+
+        // Save current presentation fields before submitting
+        const currentBundle = document.getElementById('prod-bundle').value;
+        readCostFieldsToMap(currentBundle);
+
+        // The active presentation fields are what we persist
         const product = {
             name: document.getElementById('prod-name').value,
-            bundle: document.getElementById('prod-bundle').value,
+            bundle: currentBundle,
             category: document.getElementById('prod-category').value,
             supplier: document.getElementById('prod-supplier').value,
             sku: document.getElementById('prod-sku').value,
@@ -323,14 +373,17 @@ document.addEventListener('DOMContentLoaded', () => {
             stock: parseInt(document.getElementById('prod-stock').value) || 0,
             minStock: parseInt(document.getElementById('prod-min-stock').value) || 5,
             status: document.getElementById('prod-status').value,
-            
-            cost: parseFloat(document.getElementById('prod-cost').value) || 0,
+
+            cost:  parseFloat(document.getElementById('prod-cost').value)  || 0,
             price: parseFloat(document.getElementById('prod-price').value) || 0,
-            ads: parseFloat(document.getElementById('prod-ads').value) || 0,
-            pack: parseFloat(document.getElementById('prod-pack').value) || 0,
-            ship: parseFloat(document.getElementById('prod-ship').value) || 0,
-            comm: parseFloat(document.getElementById('prod-comm').value) || 0,
+            ads:   parseFloat(document.getElementById('prod-ads').value)   || 0,
+            pack:  parseFloat(document.getElementById('prod-pack').value)  || 0,
+            ship:  parseFloat(document.getElementById('prod-ship').value)  || 0,
+            comm:  parseFloat(document.getElementById('prod-comm').value)  || 0,
             other: parseFloat(document.getElementById('prod-other').value) || 0,
+
+            // Persist the full per-presentation map so it survives reloads
+            costStructure: JSON.parse(JSON.stringify(_costStructureMap)),
             updatedAt: new Date().toISOString()
         };
 
@@ -346,7 +399,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             closeProductModal();
             loadProductsTable();
-            initDashboard(); // Update counts
+            initDashboard();
         } catch (error) {
             Swal.fire('Error', 'No se pudo guardar el producto', 'error');
             console.error(error);
@@ -435,10 +488,25 @@ document.addEventListener('DOMContentLoaded', () => {
     window.editProduct = async function(id) {
         const p = await db.products.get(id);
         if(!p) return;
-        
+
+        // Restore per-presentation cost map (or bootstrap from stored flat fields)
+        const currentBundle = p.bundle || '1';
+        _costStructureMap = p.costStructure ? JSON.parse(JSON.stringify(p.costStructure)) : {};
+        // Ensure the active bundle always has the currently stored flat values
+        _costStructureMap[currentBundle] = {
+            cost:  p.cost  || 0,
+            price: p.price || 0,
+            ads:   p.ads   || 0,
+            pack:  p.pack  || 0,
+            ship:  p.ship  || 0,
+            comm:  p.comm  || 0,
+            other: p.other || 0,
+        };
+        _lastBundle = currentBundle;
+
         document.getElementById('prod-id').value = p.id;
         document.getElementById('modal-title').textContent = p.name;
-        document.getElementById('prod-bundle').value = p.bundle || '1';
+        document.getElementById('prod-bundle').value = currentBundle;
         document.getElementById('prod-name').value = p.name;
         document.getElementById('prod-category').value = p.category || '';
         document.getElementById('prod-supplier').value = p.supplier || '';
@@ -447,13 +515,13 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('prod-stock').value = p.stock;
         document.getElementById('prod-min-stock').value = p.minStock;
         document.getElementById('prod-status').value = p.status;
-        
-        document.getElementById('prod-cost').value = p.cost;
+
+        document.getElementById('prod-cost').value  = p.cost;
         document.getElementById('prod-price').value = p.price;
-        document.getElementById('prod-ads').value = p.ads;
-        document.getElementById('prod-pack').value = p.pack;
-        document.getElementById('prod-ship').value = p.ship;
-        document.getElementById('prod-comm').value = p.comm;
+        document.getElementById('prod-ads').value   = p.ads;
+        document.getElementById('prod-pack').value  = p.pack;
+        document.getElementById('prod-ship').value  = p.ship;
+        document.getElementById('prod-comm').value  = p.comm;
         document.getElementById('prod-other').value = p.other;
 
         updateProductCalc();
@@ -557,6 +625,28 @@ document.addEventListener('DOMContentLoaded', () => {
                     today.setDate(today.getDate() + 15);
                     expectedDateInput.value = today.toISOString().split('T')[0];
                 }
+
+                // Reset toggles to defaults
+                document.getElementById('lay-ship-no').checked = true;
+                document.getElementById('lay-ship-amount-wrap').style.display = 'none';
+                document.getElementById('lay-ship-amount').value = 0;
+                document.getElementById('lay-disc-no').checked = true;
+                document.getElementById('lay-disc-amount-wrap').style.display = 'none';
+                document.getElementById('lay-disc-percent').value = 10;
+
+                // Toggle listeners
+                document.querySelectorAll('input[name="lay-ship-apply"]').forEach(r => {
+                    r.onchange = () => {
+                        const wrap = document.getElementById('lay-ship-amount-wrap');
+                        wrap.style.display = r.value === 'yes' ? 'block' : 'none';
+                    };
+                });
+                document.querySelectorAll('input[name="lay-disc-apply"]').forEach(r => {
+                    r.onchange = () => {
+                        const wrap = document.getElementById('lay-disc-amount-wrap');
+                        wrap.style.display = r.value === 'yes' ? 'block' : 'none';
+                    };
+                });
             }
         });
     }
@@ -568,7 +658,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if(!prodId) return;
 
             const qty = parseInt(document.getElementById('lay-qty').value) || 1;
-            const totalAmount = parseFloat(document.getElementById('lay-total').value);
+            let totalAmount = parseFloat(document.getElementById('lay-total').value);
 
             const p = await db.products.get(prodId);
             if(p.stock < qty) {
@@ -578,6 +668,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const expectedDate = document.getElementById('lay-expected-date').value;
 
+            // --- Envío ---
+            const shipApply = document.querySelector('input[name="lay-ship-apply"]:checked').value === 'yes';
+            const shipAmount = shipApply ? (parseFloat(document.getElementById('lay-ship-amount').value) || 0) : 0;
+
+            // --- Descuento ---
+            const discApply = document.querySelector('input[name="lay-disc-apply"]:checked').value === 'yes';
+            const discPercent = discApply ? (parseFloat(document.getElementById('lay-disc-percent').value) || 10) : 0;
+
+            // Apply discount to totalAmount
+            if (discApply && discPercent > 0) {
+                totalAmount = totalAmount * (1 - discPercent / 100);
+            }
+
+            // Shipping cost is added to our cost (we pay it), not to the client total
+            const extraCostPerUnit = shipApply ? (shipAmount / qty) : 0;
+
             const layaway = {
                 productId: prodId,
                 customer: document.getElementById('lay-customer').value,
@@ -586,14 +692,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 date: new Date().toISOString(),
                 expectedDate: expectedDate || null,
                 status: 'pending',
-                totalAmount: totalAmount
+                totalAmount: Math.round(totalAmount * 100) / 100,
+                shipAmount: shipAmount,
+                discPercent: discPercent,
+                extraCostPerUnit: extraCostPerUnit
             };
 
             await db.layaways.add(layaway);
             formLayaway.reset();
+            // Reset toggles visually
+            document.getElementById('lay-ship-no').checked = true;
+            document.getElementById('lay-ship-amount-wrap').style.display = 'none';
+            document.getElementById('lay-disc-no').checked = true;
+            document.getElementById('lay-disc-amount-wrap').style.display = 'none';
             formLayawayContainer.style.display = 'none';
             loadLayaways(prodId);
-            Swal.fire({icon: 'success', title: 'Pedido Registrado', timer: 1000, showConfirmButton: false});
+            const shipMsg = shipApply ? ` • Envío: RD$${shipAmount}` : '';
+            const discMsg = discApply ? ` • Descuento: ${discPercent}%` : '';
+            Swal.fire({icon: 'success', title: 'Pedido Registrado', html: `Total: RD$${(Math.round(totalAmount * 100)/100).toLocaleString()}${shipMsg}${discMsg}`, timer: 2000, showConfirmButton: false});
         });
     }
 
@@ -743,35 +859,117 @@ document.addEventListener('DOMContentLoaded', () => {
                 title: 'Venta Directa',
                 html: `
                     <div style="text-align: left; margin-top: 15px;">
-                        <label>Cliente (Opcional):</label>
+                        <label style="font-size:0.85rem;font-weight:600;color:#9CA3AF;">Cliente (Opcional):</label>
                         <input id="swal-cust" class="swal2-input" placeholder="Nombre">
-                        <label>Cantidad:</label>
+                        <label style="font-size:0.85rem;font-weight:600;color:#9CA3AF;">Cantidad:</label>
                         <input id="swal-qty" type="number" class="swal2-input" value="1" min="1" max="${p.stock}">
-                        <label>Precio:</label>
+                        <label style="font-size:0.85rem;font-weight:600;color:#9CA3AF;">Precio (RD$):</label>
                         <input id="swal-price" type="number" class="swal2-input" value="${p.price}">
-                        <label>Método de Pago:</label>
+                        <label style="font-size:0.85rem;font-weight:600;color:#9CA3AF;">Método de Pago:</label>
                         <select id="swal-pay-method" class="swal2-input">
                             <option value="Efectivo">Efectivo</option>
                             <option value="Transferencia">Transferencia</option>
                             <option value="Tarjeta">Tarjeta</option>
                         </select>
+
+                        <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;">
+                            <!-- Envío -->
+                            <div style="background:rgba(255,255,255,0.05);border:1px solid #374151;border-radius:8px;padding:10px 14px;flex:1;min-width:150px;">
+                                <div style="font-size:0.75rem;font-weight:700;color:#9CA3AF;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">¿Aplica Envío?</div>
+                                <div style="display:flex;gap:6px;">
+                                    <label style="cursor:pointer;"><input type="radio" name="swal-ship" id="swal-ship-no" value="no" checked style="display:none;"><span id="swal-ship-no-lbl" style="display:inline-block;padding:4px 14px;border-radius:20px;font-size:0.82rem;font-weight:600;border:1px solid #374151;background:#2563EB;color:#fff;">No</span></label>
+                                    <label style="cursor:pointer;"><input type="radio" name="swal-ship" id="swal-ship-yes" value="yes" style="display:none;"><span id="swal-ship-yes-lbl" style="display:inline-block;padding:4px 14px;border-radius:20px;font-size:0.82rem;font-weight:600;border:1px solid #374151;color:#9CA3AF;">Sí</span></label>
+                                </div>
+                                <div id="swal-ship-wrap" style="display:none;margin-top:8px;">
+                                    <input type="number" id="swal-ship-amount" class="swal2-input" placeholder="Monto envío (RD$)" value="0" min="0" style="margin:0;width:100%;">
+                                </div>
+                            </div>
+                            <!-- Descuento -->
+                            <div style="background:rgba(255,255,255,0.05);border:1px solid #374151;border-radius:8px;padding:10px 14px;flex:1;min-width:150px;">
+                                <div style="font-size:0.75rem;font-weight:700;color:#9CA3AF;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">¿Aplica Descuento?</div>
+                                <div style="display:flex;gap:6px;">
+                                    <label style="cursor:pointer;"><input type="radio" name="swal-disc" id="swal-disc-no" value="no" checked style="display:none;"><span id="swal-disc-no-lbl" style="display:inline-block;padding:4px 14px;border-radius:20px;font-size:0.82rem;font-weight:600;border:1px solid #374151;background:#2563EB;color:#fff;">No</span></label>
+                                    <label style="cursor:pointer;"><input type="radio" name="swal-disc" id="swal-disc-yes" value="yes" style="display:none;"><span id="swal-disc-yes-lbl" style="display:inline-block;padding:4px 14px;border-radius:20px;font-size:0.82rem;font-weight:600;border:1px solid #374151;color:#9CA3AF;">Sí</span></label>
+                                </div>
+                                <div id="swal-disc-wrap" style="display:none;margin-top:8px;align-items:center;gap:6px;">
+                                    <input type="number" id="swal-disc-percent" class="swal2-input" placeholder="%" value="10" min="0" max="100" style="margin:0;width:70px;display:inline-block;">
+                                    <span style="font-size:0.85rem;color:#9CA3AF;"> % descuento</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 `,
                 focusConfirm: false,
                 showCancelButton: true,
                 confirmButtonText: 'Vender',
+                didOpen: () => {
+                    // Toggle listeners inside Swal
+                    const styleBtn = (name, val) => {
+                        document.querySelectorAll(`input[name="${name}"]`).forEach(r => {
+                            const isYes = r.value === 'yes';
+                            const lbl = document.getElementById(isYes ? `swal-${name.replace('swal-','')}-yes-lbl` : `swal-${name.replace('swal-','')}-no-lbl`);
+                        });
+                    };
+                    const refreshShip = () => {
+                        const yes = document.getElementById('swal-ship-yes').checked;
+                        document.getElementById('swal-ship-wrap').style.display = yes ? 'block' : 'none';
+                        document.getElementById('swal-ship-yes-lbl').style.background = yes ? '#10B981' : 'transparent';
+                        document.getElementById('swal-ship-yes-lbl').style.color = yes ? '#fff' : '#9CA3AF';
+                        document.getElementById('swal-ship-yes-lbl').style.borderColor = yes ? '#10B981' : '#374151';
+                        document.getElementById('swal-ship-no-lbl').style.background = yes ? 'transparent' : '#2563EB';
+                        document.getElementById('swal-ship-no-lbl').style.color = yes ? '#9CA3AF' : '#fff';
+                        document.getElementById('swal-ship-no-lbl').style.borderColor = yes ? '#374151' : '#2563EB';
+                    };
+                    const refreshDisc = () => {
+                        const yes = document.getElementById('swal-disc-yes').checked;
+                        const wrap = document.getElementById('swal-disc-wrap');
+                        wrap.style.display = yes ? 'flex' : 'none';
+                        document.getElementById('swal-disc-yes-lbl').style.background = yes ? '#10B981' : 'transparent';
+                        document.getElementById('swal-disc-yes-lbl').style.color = yes ? '#fff' : '#9CA3AF';
+                        document.getElementById('swal-disc-yes-lbl').style.borderColor = yes ? '#10B981' : '#374151';
+                        document.getElementById('swal-disc-no-lbl').style.background = yes ? 'transparent' : '#2563EB';
+                        document.getElementById('swal-disc-no-lbl').style.color = yes ? '#9CA3AF' : '#fff';
+                        document.getElementById('swal-disc-no-lbl').style.borderColor = yes ? '#374151' : '#2563EB';
+                    };
+                    document.querySelectorAll('input[name="swal-ship"]').forEach(r => r.addEventListener('change', refreshShip));
+                    document.querySelectorAll('input[name="swal-disc"]').forEach(r => r.addEventListener('change', refreshDisc));
+                    // Clicking span label triggers radio
+                    ['swal-ship-no-lbl','swal-ship-yes-lbl'].forEach(id => {
+                        document.getElementById(id)?.addEventListener('click', () => {
+                            const val = id.includes('yes') ? 'yes' : 'no';
+                            document.querySelector(`input[name="swal-ship"][value="${val}"]`).checked = true;
+                            refreshShip();
+                        });
+                    });
+                    ['swal-disc-no-lbl','swal-disc-yes-lbl'].forEach(id => {
+                        document.getElementById(id)?.addEventListener('click', () => {
+                            const val = id.includes('yes') ? 'yes' : 'no';
+                            document.querySelector(`input[name="swal-disc"][value="${val}"]`).checked = true;
+                            refreshDisc();
+                        });
+                    });
+                },
                 preConfirm: () => {
+                    const shipYes = document.getElementById('swal-ship-yes').checked;
+                    const discYes = document.getElementById('swal-disc-yes').checked;
+                    let price = parseFloat(document.getElementById('swal-price').value) || p.price;
+                    const qty = parseInt(document.getElementById('swal-qty').value) || 1;
+                    const shipAmount = shipYes ? (parseFloat(document.getElementById('swal-ship-amount').value) || 0) : 0;
+                    const discPercent = discYes ? (parseFloat(document.getElementById('swal-disc-percent').value) || 10) : 0;
+                    if (discYes && discPercent > 0) price = price * (1 - discPercent / 100);
                     return {
                         cust: document.getElementById('swal-cust').value || 'Mostrador',
-                        qty: parseInt(document.getElementById('swal-qty').value) || 1,
-                        price: parseFloat(document.getElementById('swal-price').value) || p.price,
-                        paymentMethod: document.getElementById('swal-pay-method').value
-                    }
+                        qty,
+                        price: Math.round(price * 100) / 100,
+                        paymentMethod: document.getElementById('swal-pay-method').value,
+                        shipAmount,
+                        discPercent
+                    };
                 }
             });
 
             if (result.isConfirmed) {
-                const {cust, qty, price, paymentMethod} = result.value;
+                const {cust, qty, price, paymentMethod, shipAmount, discPercent} = result.value;
                 if(qty > p.stock) {
                     Swal.fire('Error', 'Cantidad mayor al stock.', 'error');
                     return;
@@ -780,6 +978,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Deduct stock
                 await db.products.update(prodId, { stock: p.stock - qty });
                 
+                // Shipping is our cost, add per unit
+                const extraCostPerUnit = qty > 0 ? (shipAmount / qty) : 0;
+
                 // Create Sale record
                 await db.sales.add({
                     productId: prodId,
@@ -787,7 +988,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     qty: qty,
                     price: price,
                     paymentMethod: paymentMethod,
-                    totalCost: (p.cost + p.ads + p.pack + p.ship + p.comm + p.other) * qty,
+                    totalCost: ((p.cost + p.ads + p.pack + p.ship + p.comm + p.other) + extraCostPerUnit) * qty,
+                    shipAmount: shipAmount,
+                    discPercent: discPercent,
                     date: new Date().toISOString(),
                     source: 'direct'
                 });

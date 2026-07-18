@@ -451,6 +451,46 @@
                                     <button type="submit" class="btn btn-primary w-100">Registrar</button>
                                 </div>
                             </div>
+                            <!-- Envío y Descuento -->
+                            <div class="form-row" style="margin-top: 10px; gap: 16px; flex-wrap: wrap;">
+                                <!-- Envío -->
+                                <div class="toggle-option-group">
+                                    <label class="toggle-label-text">¿Aplica Envío?</label>
+                                    <div class="toggle-row">
+                                        <label class="toggle-pill">
+                                            <input type="radio" name="lay-ship-apply" id="lay-ship-no" value="no" checked>
+                                            <span>No</span>
+                                        </label>
+                                        <label class="toggle-pill">
+                                            <input type="radio" name="lay-ship-apply" id="lay-ship-yes" value="yes">
+                                            <span>Sí</span>
+                                        </label>
+                                    </div>
+                                    <div id="lay-ship-amount-wrap" style="display:none; margin-top:6px;">
+                                        <input type="number" id="lay-ship-amount" class="swal2-input" placeholder="Monto envío (RD$)" min="0" value="0" style="margin:0; width:100%;">
+                                    </div>
+                                </div>
+                                <!-- Descuento -->
+                                <div class="toggle-option-group">
+                                    <label class="toggle-label-text">¿Aplica Descuento?</label>
+                                    <div class="toggle-row">
+                                        <label class="toggle-pill">
+                                            <input type="radio" name="lay-disc-apply" id="lay-disc-no" value="no" checked>
+                                            <span>No</span>
+                                        </label>
+                                        <label class="toggle-pill">
+                                            <input type="radio" name="lay-disc-apply" id="lay-disc-yes" value="yes">
+                                            <span>Sí</span>
+                                        </label>
+                                    </div>
+                                    <div id="lay-disc-amount-wrap" style="display:none; margin-top:6px;">
+                                        <div style="display:flex; align-items:center; gap:6px;">
+                                            <input type="number" id="lay-disc-percent" class="swal2-input" placeholder="%" min="0" max="100" value="10" style="margin:0; width:80px;">
+                                            <span style="color:var(--text-muted); font-size:0.9rem;">% de descuento</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </form>
                     </div>
 

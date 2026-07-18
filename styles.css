@@ -1098,3 +1098,56 @@ hr.border-color { border: none; border-top: 1px solid var(--border-color); }
         background: transparent !important;
     }
 }
+
+/* === Toggle Pill (Envío / Descuento) === */
+.toggle-option-group {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 10px 14px;
+    min-width: 170px;
+    flex: 1;
+}
+.toggle-label-text {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    margin-bottom: 8px;
+}
+.toggle-row {
+    display: flex;
+    gap: 6px;
+}
+.toggle-pill {
+    cursor: pointer;
+}
+.toggle-pill input[type="radio"] {
+    display: none;
+}
+.toggle-pill span {
+    display: inline-block;
+    padding: 5px 16px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border: 1px solid var(--border-color);
+    background: transparent;
+    color: var(--text-muted);
+    transition: all 0.2s ease;
+    user-select: none;
+}
+.toggle-pill input[type="radio"]:checked + span {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+    box-shadow: 0 0 8px rgba(37,99,235,0.4);
+}
+/* "Sí" radio checked = success color */
+.toggle-pill:has(input[value="yes"]:checked) span {
+    background: var(--success);
+    border-color: var(--success);
+    box-shadow: 0 0 8px rgba(16,185,129,0.4);
+}
