@@ -565,34 +565,39 @@ document.addEventListener('DOMContentLoaded', () => {
     window.deleteProduct = async function(id) {
         const { value: pin } = await Swal.fire({
             title: 'Autorización Requerida',
-            text: 'Introduce el PIN de seguridad para eliminar este producto:',
+            html: `<p style="color:#9CA3AF;margin-bottom:8px;">Introduce el PIN para eliminar este producto:</p>`,
             input: 'password',
-            inputPlaceholder: 'PIN',
+            inputPlaceholder: 'PIN de Producto',
+            inputAttributes: { maxlength: 5 },
             showCancelButton: true,
-            confirmButtonText: 'Eliminar',
+            confirmButtonText: 'Verificar',
+            cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#EF4444'
+        });
+
+        if (!pin) return;
+
+        if (pin !== 'P1290') {
+            Swal.fire({ icon: 'error', title: 'PIN incorrecto', text: 'El PIN para eliminar productos es incorrecto.', timer: 2000, showConfirmButton: false });
+            return;
+        }
+
+        const result = await Swal.fire({
+            title: '¿Confirmar eliminación?',
+            text: 'Esta acción borrará el producto de forma permanente. (Sus ventas y gastos seguirán en el sistema)',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#EF4444',
+            cancelButtonColor: '#374151',
+            confirmButtonText: 'Sí, eliminar',
             cancelButtonText: 'Cancelar'
         });
 
-        if (pin === '1290') {
-            const result = await Swal.fire({
-                title: '¿Confirmar eliminación?',
-                text: "Esta acción borrará el producto de forma permanente. (Sus ventas y gastos seguirán en el sistema)",
-                icon: 'warning',
-                showCancelButton: true,
-                confirmButtonColor: '#EF4444',
-                cancelButtonColor: '#374151',
-                confirmButtonText: 'Sí, eliminar',
-                cancelButtonText: 'Cancelar'
-            });
-
-            if (result.isConfirmed) {
-                await db.products.delete(id);
-                loadProductsTable();
-                initDashboard();
-                Swal.fire({icon: 'success', title: 'Eliminado', timer: 1000, showConfirmButton: false});
-            }
-        } else if (pin) {
-            Swal.fire('Error', 'PIN incorrecto', 'error');
+        if (result.isConfirmed) {
+            await db.products.delete(id);
+            loadProductsTable();
+            initDashboard();
+            Swal.fire({ icon: 'success', title: 'Eliminado', timer: 1000, showConfirmButton: false });
         }
     };
 
@@ -770,11 +775,51 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     window.cancelLayaway = async function(layawayId, productId) {
-        const result = await Swal.fire({title: '¿Cancelar apartado?', icon: 'warning', showCancelButton: true, confirmButtonText: 'Sí, cancelar'});
-        if(result.isConfirmed) {
-            await db.layaways.update(layawayId, {status: 'cancelled'});
+        // Step 1: Ask for PIN
+        const { value: pin } = await Swal.fire({
+            title: 'Autorización Requerida',
+            html: `<p style="color:#9CA3AF;margin-bottom:8px;">Introduce el PIN para cancelar este apartado:</p>`,
+            input: 'password',
+            inputPlaceholder: 'PIN de Apartado',
+            inputAttributes: { maxlength: 5 },
+            showCancelButton: true,
+            confirmButtonText: 'Verificar',
+            cancelButtonText: 'Volver',
+            confirmButtonColor: '#EF4444'
+        });
+
+        if (!pin) return; // User cancelled
+
+        if (pin !== 'A1290') {
+            Swal.fire({ icon: 'error', title: 'PIN incorrecto', text: 'El PIN para cancelar apartados es incorrecto.', timer: 2000, showConfirmButton: false });
+            return;
+        }
+
+        // Step 2: Confirm cancellation
+        const result = await Swal.fire({
+            title: '¿Cancelar apartado?',
+            text: 'El producto volverá a estar disponible en inventario.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#EF4444',
+            confirmButtonText: 'Sí, cancelar',
+            cancelButtonText: 'No'
+        });
+
+        if (result.isConfirmed) {
+            const l = await db.layaways.get(layawayId);
+            await db.layaways.update(layawayId, { status: 'cancelled' });
+            // Restore stock
+            const p = await db.products.get(productId);
+            if (p && l) {
+                await db.products.update(productId, { stock: p.stock + l.qty });
+                document.getElementById('prod-stock').value = p.stock + l.qty;
+            }
             loadLayaways(productId);
-            Swal.fire({icon: 'success', title: 'Cancelado', timer: 1000, showConfirmButton: false});
+            loadMetrics(productId);
+            loadProductsTable();
+            initDashboard();
+            Swal.fire({ icon: 'success', title: 'Apartado Cancelado', text: 'El stock fue restaurado.', timer: 1500, showConfirmButton: false });
         }
     };
 
@@ -1044,46 +1089,51 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     window.deleteSale = async function(saleId, productId) {
+        // Step 1: Ask for PIN V1290
         const { value: pin } = await Swal.fire({
             title: 'Autorización Requerida',
-            text: 'Introduce el PIN de seguridad para eliminar esta venta y restaurar el stock:',
+            html: `<p style="color:#9CA3AF;margin-bottom:8px;">Introduce el PIN para eliminar esta venta:</p>`,
             input: 'password',
-            inputPlaceholder: 'PIN',
+            inputPlaceholder: 'PIN de Venta',
+            inputAttributes: { maxlength: 5 },
             showCancelButton: true,
-            confirmButtonText: 'Eliminar',
-            cancelButtonText: 'Cancelar'
+            confirmButtonText: 'Verificar',
+            cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#EF4444'
         });
 
-        if (pin === '1290') {
-            const result = await Swal.fire({
-                title: '¿Confirmar eliminación?',
-                text: "Se borrará la venta y las unidades volverán al inventario.",
-                icon: 'warning',
-                showCancelButton: true,
-                confirmButtonColor: '#EF4444',
-                confirmButtonText: 'Sí, eliminar'
-            });
+        if (!pin) return;
 
-            if (result.isConfirmed) {
-                const s = await db.sales.get(saleId);
-                if(s) {
-                    const p = await db.products.get(productId);
-                    if(p) {
-                        await db.products.update(productId, { stock: p.stock + s.qty });
-                        document.getElementById('prod-stock').value = p.stock + s.qty; // Update UI
-                    }
-                    await db.sales.delete(saleId);
-                    
-                    loadSales(productId);
-                    loadMetrics(productId);
-                    loadProductsTable(); 
-                    initDashboard(); 
-                    
-                    Swal.fire({icon: 'success', title: 'Venta Eliminada', text: 'Stock restaurado.', timer: 1500, showConfirmButton: false});
+        if (pin !== 'V1290') {
+            Swal.fire({ icon: 'error', title: 'PIN incorrecto', text: 'El PIN para eliminar ventas es incorrecto.', timer: 2000, showConfirmButton: false });
+            return;
+        }
+
+        // Step 2: Confirm deletion
+        const result = await Swal.fire({
+            title: '¿Eliminar venta?',
+            text: 'Se borrará la venta y las unidades volverán al inventario.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#EF4444',
+            confirmButtonText: 'Sí, eliminar'
+        });
+
+        if (result.isConfirmed) {
+            const s = await db.sales.get(saleId);
+            if(s) {
+                const p = await db.products.get(productId);
+                if(p) {
+                    await db.products.update(productId, { stock: p.stock + s.qty });
+                    document.getElementById('prod-stock').value = p.stock + s.qty;
                 }
+                await db.sales.delete(saleId);
+                loadSales(productId);
+                loadMetrics(productId);
+                loadProductsTable();
+                initDashboard();
+                Swal.fire({ icon: 'success', title: 'Venta Eliminada', text: 'Stock restaurado.', timer: 1500, showConfirmButton: false });
             }
-        } else if (pin) {
-            Swal.fire('Error', 'PIN incorrecto', 'error');
         }
     };
 
