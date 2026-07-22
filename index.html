@@ -409,210 +409,227 @@
                             </div>
                         </div>
                     </div>
-                        <div class="modal-footer flex-end gap-3 mt-4 pt-4 border-top">
-                            <button type="submit" class="btn btn-primary w-100" style="padding: 14px;"><i class="ph ph-floppy-disk"></i> Guardar Cambios</button>
+                    <div class="modal-footer flex-end gap-3 mt-4 pt-4 border-top">
+                        <button type="submit" class="btn btn-primary w-100" style="padding: 14px;"><i class="ph ph-floppy-disk"></i> Guardar Cambios</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- TAB 2: LAYAWAYS (Apartados) -->
+            <div id="tab-layaways" class="tab-content">
+                <div class="flex-between mb-3">
+                    <p class="text-muted">Gestiona productos reservados por clientes.</p>
+                    <button class="btn btn-primary btn-sm" id="btn-new-layaway"><i class="ph ph-plus"></i> Nuevo Apartado</button>
+                </div>
+                
+                <div id="form-layaway-container" class="card bg-darker p-3 mb-3" style="display: none;">
+                    <form id="form-layaway">
+                        <div class="form-row">
+                            <div class="input-group">
+                                <label>Nombre del Cliente *</label>
+                                <input type="text" id="lay-customer" required>
+                            </div>
+                            <div class="input-group">
+                                <label>Teléfono / WhatsApp</label>
+                                <input type="text" id="lay-phone">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="input-group" style="flex: 1;">
+                                <label>Cant.</label>
+                                <input type="number" id="lay-qty" value="1" min="1" required>
+                            </div>
+                            <div class="input-group" style="flex: 1;">
+                                <label>Total Acordado (RD$)*</label>
+                                <input type="number" id="lay-total" min="0" required>
+                            </div>
+                            <div class="input-group" style="flex: 1.5;">
+                                <label>Fecha Límite *</label>
+                                <input type="date" id="lay-expected-date" required>
+                            </div>
+                            <div class="input-group flex-end" style="align-items: flex-end; flex: 1.5;">
+                                <button type="submit" class="btn btn-primary w-100">Registrar</button>
+                            </div>
+                        </div>
+                        <!-- Envío y Descuento -->
+                        <div class="form-row" style="margin-top: 10px; gap: 16px; flex-wrap: wrap;">
+                            <!-- Envío -->
+                            <div class="toggle-option-group">
+                                <label class="toggle-label-text">¿Aplica Envío?</label>
+                                <div class="toggle-row">
+                                    <label class="toggle-pill">
+                                        <input type="radio" name="lay-ship-apply" id="lay-ship-no" value="no" checked>
+                                        <span>No</span>
+                                    </label>
+                                    <label class="toggle-pill">
+                                        <input type="radio" name="lay-ship-apply" id="lay-ship-yes" value="yes">
+                                        <span>Sí</span>
+                                    </label>
+                                </div>
+                                <div id="lay-ship-amount-wrap" style="display:none; margin-top:6px;">
+                                    <input type="number" id="lay-ship-amount" class="swal2-input" placeholder="Monto envío (RD$)" min="0" value="0" style="margin:0; width:100%;">
+                                </div>
+                            </div>
+                            <!-- Descuento -->
+                            <div class="toggle-option-group">
+                                <label class="toggle-label-text">¿Aplica Descuento?</label>
+                                <div class="toggle-row">
+                                    <label class="toggle-pill">
+                                        <input type="radio" name="lay-disc-apply" id="lay-disc-no" value="no" checked>
+                                        <span>No</span>
+                                    </label>
+                                    <label class="toggle-pill">
+                                        <input type="radio" name="lay-disc-apply" id="lay-disc-yes" value="yes">
+                                        <span>Sí</span>
+                                    </label>
+                                </div>
+                                <div id="lay-disc-amount-wrap" style="display:none; margin-top:6px;">
+                                    <div style="display:flex; align-items:center; gap:6px;">
+                                        <input type="number" id="lay-disc-percent" class="swal2-input" placeholder="%" min="0" max="100" value="10" style="margin:0; width:80px;">
+                                        <span style="color:var(--text-muted); font-size:0.9rem;">% de descuento</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Discount Summary Box -->
+                        <div id="lay-disc-summary-box" style="display:none; margin-top:14px; padding:12px 16px; background:rgba(16,185,129,0.08); border:1px dashed #10B981; border-radius:8px;">
+                            <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                                <span style="color:var(--text-muted); font-size:0.9rem;">Precio Normal:</span>
+                                <span id="lay-summary-normal" style="font-weight:600; font-size:0.9rem;">RD$0</span>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                                <span style="color:#EF4444; font-size:0.9rem; font-weight:500;">Descuento Aplicado (<span id="lay-summary-pct">0</span>%):</span>
+                                <span id="lay-summary-disc" style="color:#EF4444; font-weight:600; font-size:0.9rem;">-RD$0</span>
+                            </div>
+                            <hr style="border:0; border-top:1px solid rgba(255,255,255,0.1); margin:8px 0;">
+                            <div style="display:flex; justify-content:space-between;">
+                                <span style="font-weight:700; color:#10B981;">Total a Cobrar:</span>
+                                <span id="lay-summary-final" style="font-weight:800; color:#10B981; font-size:1.05rem;">RD$0</span>
+                            </div>
                         </div>
                     </form>
                 </div>
 
-                <!-- TAB 2: LAYAWAYS (Apartados) -->
-                <div id="tab-layaways" class="tab-content">
-                    <div class="flex-between mb-3">
-                        <p class="text-muted">Gestiona productos reservados por clientes.</p>
-                        <button class="btn btn-primary btn-sm" id="btn-new-layaway" style="display: none;"><i class="ph ph-plus"></i> Nuevo Apartado</button>
-                    </div>
-                    
-                    <div id="form-layaway-container" class="card bg-darker p-3 mb-3" style="display: none;">
-                        <form id="form-layaway">
-                            <div class="form-row">
-                                <div class="input-group">
-                                    <label>Nombre del Cliente *</label>
-                                    <input type="text" id="lay-customer" required>
-                                </div>
-                                <div class="input-group">
-                                    <label>Teléfono / WhatsApp</label>
-                                    <input type="text" id="lay-phone">
-                                </div>
-                            </div>
-                            <div class="form-row">
-                                <div class="input-group" style="flex: 1;">
-                                    <label>Cant.</label>
-                                    <input type="number" id="lay-qty" value="1" min="1" required>
-                                </div>
-                                <div class="input-group" style="flex: 1;">
-                                    <label>Total Acordado (RD$)*</label>
-                                    <input type="number" id="lay-total" min="0" required>
-                                </div>
-                                <div class="input-group" style="flex: 1.5;">
-                                    <label>Fecha Límite *</label>
-                                    <input type="date" id="lay-expected-date" required>
-                                </div>
-                                <div class="input-group flex-end" style="align-items: flex-end; flex: 1.5;">
-                                    <button type="submit" class="btn btn-primary w-100">Registrar</button>
-                                </div>
-                            </div>
-                            <!-- Envío y Descuento -->
-                            <div class="form-row" style="margin-top: 10px; gap: 16px; flex-wrap: wrap;">
-                                <!-- Envío -->
-                                <div class="toggle-option-group">
-                                    <label class="toggle-label-text">¿Aplica Envío?</label>
-                                    <div class="toggle-row">
-                                        <label class="toggle-pill">
-                                            <input type="radio" name="lay-ship-apply" id="lay-ship-no" value="no" checked>
-                                            <span>No</span>
-                                        </label>
-                                        <label class="toggle-pill">
-                                            <input type="radio" name="lay-ship-apply" id="lay-ship-yes" value="yes">
-                                            <span>Sí</span>
-                                        </label>
-                                    </div>
-                                    <div id="lay-ship-amount-wrap" style="display:none; margin-top:6px;">
-                                        <input type="number" id="lay-ship-amount" class="swal2-input" placeholder="Monto envío (RD$)" min="0" value="0" style="margin:0; width:100%;">
-                                    </div>
-                                </div>
-                                <!-- Descuento -->
-                                <div class="toggle-option-group">
-                                    <label class="toggle-label-text">¿Aplica Descuento?</label>
-                                    <div class="toggle-row">
-                                        <label class="toggle-pill">
-                                            <input type="radio" name="lay-disc-apply" id="lay-disc-no" value="no" checked>
-                                            <span>No</span>
-                                        </label>
-                                        <label class="toggle-pill">
-                                            <input type="radio" name="lay-disc-apply" id="lay-disc-yes" value="yes">
-                                            <span>Sí</span>
-                                        </label>
-                                    </div>
-                                    <div id="lay-disc-amount-wrap" style="display:none; margin-top:6px;">
-                                        <div style="display:flex; align-items:center; gap:6px;">
-                                            <input type="number" id="lay-disc-percent" class="swal2-input" placeholder="%" min="0" max="100" value="10" style="margin:0; width:80px;">
-                                            <span style="color:var(--text-muted); font-size:0.9rem;">% de descuento</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </form>
-                    </div>
+                <div id="layaway-message" class="text-center text-muted p-4" style="display: none;">Debes guardar el producto antes de poder crear apartados.</div>
 
-                    <div id="layaway-message" class="text-center text-muted p-4">Debes guardar el producto antes de poder crear apartados.</div>
+                <div class="table-responsive" id="layaways-table-container">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Cliente / Teléfono</th>
+                                <th>Cant.</th>
+                                <th>Tiempo Rest.</th>
+                                <th>Total</th>
+                                <th>Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="layaways-tbody">
+                            <!-- JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
 
-                    <div class="table-responsive" id="layaways-table-container" style="display: none;">
-                        <table class="table">
-                            <thead>
-                                <tr>
-                                    <th>Fecha</th>
-                                    <th>Cliente / Teléfono</th>
-                                    <th>Cant.</th>
-                                    <th>Tiempo Rest.</th>
-                                    <th>Total</th>
-                                    <th>Acción</th>
-                                </tr>
-                            </thead>
-                            <tbody id="layaways-tbody">
-                                <!-- JS -->
-                            </tbody>
-                        </table>
+            <!-- TAB 3: SALES (Vendidos) -->
+            <div id="tab-sales" class="tab-content">
+                <div class="flex-between mb-3">
+                    <p class="text-muted">Historial de ventas directas y apartados completados.</p>
+                    <button class="btn btn-success btn-sm" id="btn-direct-sale"><i class="ph ph-money"></i> Venta Directa</button>
+                </div>
+                
+                <div id="sales-message" class="text-center text-muted p-4" style="display: none;">Debes guardar el producto primero.</div>
+
+                <div class="table-responsive" id="sales-table-container">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Cliente</th>
+                                <th>Pago</th>
+                                <th>Cant.</th>
+                                <th>Ingreso</th>
+                                <th>Ganancia</th>
+                                <th>Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sales-tbody">
+                            <!-- JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- TAB 4: EXPENSES (Gastos) -->
+            <div id="tab-expenses" class="tab-content">
+                <div class="flex-between mb-3">
+                    <p class="text-muted">Registra compras de inventario, publicidad, u otros gastos del producto.</p>
+                    <button class="btn btn-danger btn-sm" id="btn-new-expense"><i class="ph ph-plus"></i> Añadir Gasto</button>
+                </div>
+                
+                <div id="form-expense-container" class="card bg-darker p-3 mb-3" style="display: none;">
+                    <form id="form-expense">
+                        <div class="form-row">
+                            <div class="input-group">
+                                <label>Tipo de Gasto *</label>
+                                <select id="exp-type">
+                                    <option value="Publicidad">Publicidad</option>
+                                    <option value="Empaque">Empaque</option>
+                                    <option value="Envio">Envío</option>
+                                    <option value="Comisiones">Comisiones</option>
+                                    <option value="CompraInventario">Compra Inventario</option>
+                                    <option value="Otros">Otros</option>
+                                </select>
+                            </div>
+                            <div class="input-group">
+                                <label>Monto (RD$) *</label>
+                                <input type="number" id="exp-amount" min="1" required>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="input-group" style="flex: 2;">
+                                <label>Descripción / Notas</label>
+                                <input type="text" id="exp-desc" placeholder="Ej. Pago Meta Ads, Reabastecimiento...">
+                            </div>
+                            <div class="input-group flex-end" style="align-items: flex-end;">
+                                <button type="submit" class="btn btn-danger w-100">Registrar</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+
+                <div id="expenses-message" class="text-center text-muted p-4" style="display: none;">Debes guardar el producto primero.</div>
+
+                <div id="expenses-dashboard">
+                    <div class="stats-grid-3">
+                        <div class="stat-card-sm"><span class="label">Total Gastado</span><span class="value text-danger" id="exp-total-val">RD$0</span></div>
+                        <div class="stat-card-sm"><span class="label">Costo Promedio (Gasto/Und)</span><span class="value" id="exp-avg-val">RD$0</span></div>
+                    </div>
+                    <div class="chart-wrapper mb-4">
+                        <h3 class="mb-3 text-center">Distribución de Gastos</h3>
+                        <div class="donut-container">
+                            <canvas id="prodExpensesChart"></canvas>
+                        </div>
                     </div>
                 </div>
 
-                <!-- TAB 3: SALES (Vendidos) -->
-                <div id="tab-sales" class="tab-content">
-                    <div class="flex-between mb-3">
-                        <p class="text-muted">Historial de ventas directas y apartados completados.</p>
-                        <button class="btn btn-success btn-sm" id="btn-direct-sale" style="display: none;"><i class="ph ph-money"></i> Venta Directa</button>
-                    </div>
-                    
-                    <div id="sales-message" class="text-center text-muted p-4">Debes guardar el producto primero.</div>
-
-                    <div class="table-responsive" id="sales-table-container" style="display: none;">
-                        <table class="table">
-                            <thead>
-                                <tr>
-                                    <th>Fecha</th>
-                                    <th>Cliente</th>
-                                    <th>Pago</th>
-                                    <th>Cant.</th>
-                                    <th>Ingreso</th>
-                                    <th>Ganancia</th>
-                                    <th>Acción</th>
-                                </tr>
-                            </thead>
-                            <tbody id="sales-tbody">
-                                <!-- JS -->
-                            </tbody>
-                        </table>
-                    </div>
+                <div class="table-responsive" id="expenses-table-container">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Tipo</th>
+                                <th>Descripción</th>
+                                <th>Monto</th>
+                                <th>Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="expenses-tbody">
+                            <!-- JS -->
+                        </tbody>
+                    </table>
                 </div>
-
-                <!-- TAB 4: EXPENSES (Gastos) -->
-                <div id="tab-expenses" class="tab-content">
-                    <div class="flex-between mb-3">
-                        <p class="text-muted">Registra compras de inventario, publicidad, u otros gastos del producto.</p>
-                        <button class="btn btn-danger btn-sm" id="btn-new-expense" style="display: none;"><i class="ph ph-plus"></i> Añadir Gasto</button>
-                    </div>
-                    
-                    <div id="form-expense-container" class="card bg-darker p-3 mb-3" style="display: none;">
-                        <form id="form-expense">
-                            <div class="form-row">
-                                <div class="input-group">
-                                    <label>Tipo de Gasto *</label>
-                                    <select id="exp-type">
-                                        <option value="Publicidad">Publicidad</option>
-                                        <option value="Empaque">Empaque</option>
-                                        <option value="Envio">Envío</option>
-                                        <option value="Comisiones">Comisiones</option>
-                                        <option value="CompraInventario">Compra Inventario</option>
-                                        <option value="Otros">Otros</option>
-                                    </select>
-                                </div>
-                                <div class="input-group">
-                                    <label>Monto (RD$) *</label>
-                                    <input type="number" id="exp-amount" min="1" required>
-                                </div>
-                            </div>
-                            <div class="form-row">
-                                <div class="input-group" style="flex: 2;">
-                                    <label>Descripción / Notas</label>
-                                    <input type="text" id="exp-desc" placeholder="Ej. Pago Meta Ads, Reabastecimiento...">
-                                </div>
-                                <div class="input-group flex-end" style="align-items: flex-end;">
-                                    <button type="submit" class="btn btn-danger w-100">Registrar</button>
-                                </div>
-                            </div>
-                        </form>
-                    </div>
-
-                    <div id="expenses-message" class="text-center text-muted p-4">Debes guardar el producto primero.</div>
-
-                    <div id="expenses-dashboard" style="display: none;">
-                        <div class="stats-grid-3">
-                            <div class="stat-card-sm"><span class="label">Total Gastado</span><span class="value text-danger" id="exp-total-val">RD$0</span></div>
-                            <div class="stat-card-sm"><span class="label">Costo Promedio (Gasto/Und)</span><span class="value" id="exp-avg-val">RD$0</span></div>
-                        </div>
-                        <div class="chart-wrapper mb-4">
-                            <h3 class="mb-3 text-center">Distribución de Gastos</h3>
-                            <div class="donut-container">
-                                <canvas id="prodExpensesChart"></canvas>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="table-responsive" id="expenses-table-container" style="display: none;">
-                        <table class="table">
-                            <thead>
-                                <tr>
-                                    <th>Fecha</th>
-                                    <th>Tipo</th>
-                                    <th>Descripción</th>
-                                    <th>Monto</th>
-                                    <th>Acción</th>
-                                </tr>
-                            </thead>
-                            <tbody id="expenses-tbody">
-                                <!-- JS -->
-                            </tbody>
-                        </table>
-                    </div>
+            </div>
                 </div>
 
             </div>
