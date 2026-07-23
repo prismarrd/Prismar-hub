@@ -56,6 +56,9 @@
                 <a href="#" class="nav-item" data-view="products">
                     <i class="ph ph-package"></i> Productos
                 </a>
+                <a href="#" class="nav-item" data-view="purchases">
+                    <i class="ph ph-shopping-cart-simple"></i> Compras
+                </a>
                 <div class="nav-divider"></div>
                 <a href="#" class="nav-item" data-view="reports">
                     <i class="ph ph-chart-line-up"></i> Reportes
@@ -94,6 +97,7 @@
                         <button class="btn btn-primary btn-sm" id="btn-quick-create"><i class="ph ph-plus"></i> Crear <i class="ph ph-caret-down"></i></button>
                         <div class="dropdown-menu" id="quick-create-menu">
                             <button class="dropdown-item" id="quick-new-product"><i class="ph ph-package"></i> Nuevo Producto</button>
+                            <button class="dropdown-item" id="quick-new-purchase"><i class="ph ph-shopping-cart-simple"></i> Nueva Compra</button>
                             <button class="dropdown-item" onclick="Swal.fire('Tip', 'Ve al producto y regístralo desde su propia ficha', 'info')"><i class="ph ph-receipt"></i> Venta / Apartado</button>
                         </div>
                     </div>
@@ -194,6 +198,70 @@
                                 </thead>
                                 <tbody id="products-tbody">
                                     <tr><td colspan="5" class="text-center text-muted p-4">No hay productos registrados.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- VIEW: PURCHASES (Compras e Inventario) -->
+                <section id="view-purchases" class="view-section">
+                    <div class="page-header flex-between">
+                        <div>
+                            <h1 class="page-title">Compras e Inventario</h1>
+                            <p class="page-subtitle">Registro de abastecimiento de mercancía y distribución de costos</p>
+                        </div>
+                        <button class="btn btn-primary" id="btn-new-purchase"><i class="ph ph-plus"></i> Nueva Compra</button>
+                    </div>
+
+                    <div class="stats-grid-3 mb-4">
+                        <div class="card stat-card p-3">
+                            <div class="stat-icon bg-blue"><i class="ph ph-shopping-cart"></i></div>
+                            <div class="stat-details">
+                                <span class="stat-label">Total Compras</span>
+                                <span class="stat-value text-primary" id="purchases-total-count">0</span>
+                            </div>
+                        </div>
+                        <div class="card stat-card p-3">
+                            <div class="stat-icon bg-purple"><i class="ph ph-package"></i></div>
+                            <div class="stat-details">
+                                <span class="stat-label">Artículos Recibidos</span>
+                                <span class="stat-value text-info" id="purchases-total-items">0</span>
+                            </div>
+                        </div>
+                        <div class="card stat-card p-3">
+                            <div class="stat-icon bg-green"><i class="ph ph-money"></i></div>
+                            <div class="stat-details">
+                                <span class="stat-label">Inversión Total en Compras</span>
+                                <span class="stat-value text-success" id="purchases-total-amount">RD$0</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="flex-between mb-3">
+                            <h2 class="card-title" style="margin-bottom:0;">Historial de Compras</h2>
+                            <div style="display: flex; gap: 12px; align-items: center;">
+                                <input type="text" id="search-purchases" placeholder="Buscar por N° Compra o Proveedor..." class="btn-sm" style="background:var(--bg-main); color:var(--text-main); border:1px solid var(--border-color); padding:6px 12px; border-radius:6px; width: 250px;">
+                            </div>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table" id="purchases-table">
+                                <thead>
+                                    <tr>
+                                        <th>N° Compra</th>
+                                        <th>Fecha</th>
+                                        <th>Proveedor</th>
+                                        <th>Artículos / Uds</th>
+                                        <th>Subtotal Mercancía</th>
+                                        <th>Gastos Adic.</th>
+                                        <th>Total Final</th>
+                                        <th>Registrado Por</th>
+                                        <th>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="purchases-tbody">
+                                    <tr><td colspan="9" class="text-center text-muted p-4">No hay compras registradas.</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -518,9 +586,10 @@
                             <tr>
                                 <th>Fecha</th>
                                 <th>Cliente / Teléfono</th>
-                                <th>Cant.</th>
+                                <th>Cant. / Presentación</th>
                                 <th>Tiempo Rest.</th>
-                                <th>Total</th>
+                                <th>Total Acordado</th>
+                                <th>Utilidad Estimada</th>
                                 <th>Acción</th>
                             </tr>
                         </thead>
@@ -545,11 +614,11 @@
                         <thead>
                             <tr>
                                 <th>Fecha</th>
-                                <th>Cliente</th>
+                                <th>Cliente / Origen</th>
                                 <th>Pago</th>
-                                <th>Cant.</th>
-                                <th>Ingreso</th>
-                                <th>Ganancia</th>
+                                <th>Cant. / Presentación</th>
+                                <th>Ingreso & Desc.</th>
+                                <th>Utilidad Neta</th>
                                 <th>Acción</th>
                             </tr>
                         </thead>
@@ -632,6 +701,156 @@
             </div>
                 </div>
 
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: NUEVA COMPRA -->
+    <div class="modal-overlay" id="modal-purchase">
+        <div class="modal-container modal-lg" style="max-width: 960px;">
+            <div class="modal-header">
+                <h2><i class="ph ph-shopping-cart-simple"></i> <span id="purchase-modal-title">Registrar Nueva Compra</span></h2>
+                <button class="btn-close-modal" id="btn-close-purchase-modal"><i class="ph ph-x"></i></button>
+            </div>
+            <div class="modal-body" style="padding: 24px;">
+                <form id="form-purchase">
+                    <input type="hidden" id="purchase-id">
+                    
+                    <div class="form-row mb-3" style="display: flex; gap: 16px; flex-wrap: wrap;">
+                        <div class="input-group" style="flex: 1; min-width: 150px;">
+                            <label>N° Compra *</label>
+                            <input type="text" id="purchase-number" readonly style="background: rgba(255,255,255,0.05); color: var(--text-muted); font-weight: 600;">
+                        </div>
+                        <div class="input-group" style="flex: 2; min-width: 200px;">
+                            <label>Proveedor (Opcional)</label>
+                            <input type="text" id="purchase-supplier" placeholder="Ej. Distribuidora Central, Importaciones XYZ">
+                        </div>
+                        <div class="input-group" style="flex: 1.2; min-width: 160px;">
+                            <label>Fecha de Compra *</label>
+                            <input type="date" id="purchase-date" required>
+                        </div>
+                    </div>
+
+                    <!-- Artículos de la compra -->
+                    <div class="card bg-darker p-3 mb-4" style="border: 1px solid var(--border-color); border-radius: 10px;">
+                        <div class="flex-between mb-3" style="flex-wrap: wrap; gap: 10px;">
+                            <div>
+                                <h3 style="font-size: 1rem; font-weight: 700; color: var(--primary); margin:0;">
+                                    <i class="ph ph-package"></i> Artículos de la Compra
+                                </h3>
+                                <small class="text-muted">Selecciona los productos e introduce su cantidad y costo unitario.</small>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-success" id="btn-add-purchase-item" style="padding: 8px 14px; font-weight: 600;">
+                                <i class="ph ph-plus"></i> Agregar artículo
+                            </button>
+                        </div>
+                        
+                        <div class="table-responsive">
+                            <table class="table" style="font-size: 0.9rem; margin-bottom: 0;">
+                                <thead>
+                                    <tr>
+                                        <th style="min-width: 220px;">Artículo del Inventario *</th>
+                                        <th style="width: 110px;">Cantidad *</th>
+                                        <th style="width: 140px;">Costo Unit. (RD$) *</th>
+                                        <th style="width: 130px;">Subtotal (RD$)</th>
+                                        <th style="width: 130px;">Gasto Distrib.</th>
+                                        <th style="width: 140px;">Costo Real Unit.</th>
+                                        <th style="width: 50px; text-align: center;">Acción</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="purchase-items-tbody">
+                                    <!-- Javascript genera filas aquí -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Gastos adicionales y Distribución -->
+                    <div class="card bg-darker p-3 mb-4" style="border: 1px solid var(--border-color); border-radius: 10px;">
+                        <div class="flex-between mb-3" style="flex-wrap: wrap; gap: 10px;">
+                            <div>
+                                <h3 style="font-size: 1rem; font-weight: 700; color: var(--warning); margin:0;">
+                                    <i class="ph ph-truck"></i> Gastos Adicionales de la Compra
+                                </h3>
+                                <small class="text-muted">Estos gastos se distribuirán proporcionalmente entre los artículos.</small>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <label style="font-size: 0.82rem; color: var(--text-muted); font-weight: 500;">Distribución:</label>
+                                <select id="purchase-expense-dist-method" class="btn-sm" style="background: var(--bg-main); color: var(--text-main); border: 1px solid var(--border-color); padding: 4px 8px; border-radius: 6px; font-size: 0.85rem;">
+                                    <option value="value">Por Subtotal (RD$)</option>
+                                    <option value="qty">Por Cantidad (Uds)</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px;">
+                            <div class="input-group">
+                                <label style="font-size: 0.8rem;">Envío (RD$)</label>
+                                <input type="number" id="exp-shipping" value="0" min="0" step="any" class="purchase-expense-input">
+                            </div>
+                            <div class="input-group">
+                                <label style="font-size: 0.8rem;">Transporte (RD$)</label>
+                                <input type="number" id="exp-transport" value="0" min="0" step="any" class="purchase-expense-input">
+                            </div>
+                            <div class="input-group">
+                                <label style="font-size: 0.8rem;">Aduana (RD$)</label>
+                                <input type="number" id="exp-customs" value="0" min="0" step="any" class="purchase-expense-input">
+                            </div>
+                            <div class="input-group">
+                                <label style="font-size: 0.8rem;">Empaque Adic. (RD$)</label>
+                                <input type="number" id="exp-packaging" value="0" min="0" step="any" class="purchase-expense-input">
+                            </div>
+                            <div class="input-group">
+                                <label style="font-size: 0.8rem;">Otros Gastos (RD$)</label>
+                                <input type="number" id="exp-others" value="0" min="0" step="any" class="purchase-expense-input">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Resumen Financiero -->
+                    <div style="background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 10px; padding: 16px 20px;" class="mb-4">
+                        <div class="flex-between mb-2">
+                            <span class="text-muted" style="font-size: 0.95rem;">Subtotal Mercancía:</span>
+                            <strong id="summary-merchandise-subtotal" style="font-size: 1.05rem; color: var(--text-main);">RD$0</strong>
+                        </div>
+                        <div class="flex-between mb-2">
+                            <span class="text-muted" style="font-size: 0.95rem;">Gastos Adicionales Totales:</span>
+                            <strong id="summary-additional-expenses" class="text-warning" style="font-size: 1.05rem;">+RD$0</strong>
+                        </div>
+                        <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 10px 0;">
+                        <div class="flex-between">
+                            <span style="font-weight: 700; font-size: 1.15rem; color: var(--text-main);">Costo Total de la Compra:</span>
+                            <strong id="summary-final-total" class="text-success" style="font-size: 1.4rem;">RD$0</strong>
+                        </div>
+                    </div>
+
+                    <!-- Footer / Botones -->
+                    <div class="modal-footer flex-end gap-3 pt-3 border-top">
+                        <button type="button" class="btn btn-outline" id="btn-cancel-purchase">Cancelar</button>
+                        <button type="submit" class="btn btn-primary" style="padding: 12px 24px; font-weight: 600;">
+                            <i class="ph ph-check"></i> Confirmar Compra y Actualizar Inventario
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: DETALLE DE COMPRA / RECIBO -->
+    <div class="modal-overlay" id="modal-purchase-detail">
+        <div class="modal-container modal-lg" style="max-width: 850px;">
+            <div class="modal-header">
+                <h2><i class="ph ph-receipt"></i> Detalle de Compra <span id="purchase-detail-number" class="text-primary"></span></h2>
+                <button class="btn-close-modal" id="btn-close-purchase-detail-modal"><i class="ph ph-x"></i></button>
+            </div>
+            <div class="modal-body" style="padding: 24px;">
+                <div id="purchase-detail-content">
+                    <!-- Javascript inyecta el recibo formateado aquí -->
+                </div>
+                <div class="modal-footer flex-between pt-3 border-top mt-4">
+                    <button type="button" class="btn btn-outline text-danger" id="btn-delete-purchase"><i class="ph ph-trash"></i> Eliminar Compra</button>
+                    <button type="button" class="btn btn-outline" id="btn-close-purchase-detail">Cerrar</button>
+                </div>
             </div>
         </div>
     </div>

@@ -98,6 +98,7 @@ const db = {
     expenses: new FirestoreAdapter('expenses'),
     history: new FirestoreAdapter('history'),
     dailyCash: new FirestoreAdapter('dailyCash'),
+    purchases: new FirestoreAdapter('purchases'),
     
     // Ignorar inicializaciones antiguas de Dexie
     version: function() { return this; },

@@ -69,6 +69,8 @@ document.addEventListener('DOMContentLoaded', () => {
             initDashboard();
         } else if (viewId === 'products') {
             initProductsView();
+        } else if (viewId === 'purchases') {
+            initPurchasesView();
         }
         
         // Close sidebar on mobile after navigating
@@ -926,18 +928,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const prodId = parseInt(document.getElementById('prod-id').value);
             if(!prodId) return;
 
-            const combos = parseInt(document.getElementById('lay-qty').value) || 1;
-            const bundleSize = parseInt(document.getElementById('lay-qty').dataset.bundleSize) || 1;
-            const physicalUnits = combos * bundleSize; // real units to deduct from stock
+            const selectedBundleKey = document.getElementById('lay-qty').value; // '1', '2', '3', 'pack'
+            const bundleQtyMap = { '1': 1, '2': 2, '3': 3, 'pack': 1 };
+            const physicalUnits = bundleQtyMap[selectedBundleKey] || 1;
 
             const totalAmount = parseFloat(document.getElementById('lay-total').value);
 
             const p = await db.products.get(prodId);
-            if(p.stock < physicalUnits) {
-                Swal.fire('Atención', `Solo tienes ${p.stock} unidades en stock. Necesitas ${physicalUnits}.`, 'warning');
-                return;
-            }
-
             const expectedDate = document.getElementById('lay-expected-date').value;
 
             // --- Envío ---
@@ -954,9 +951,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 productId: prodId,
                 customer: document.getElementById('lay-customer').value,
                 phone: document.getElementById('lay-phone').value || '',
-                qty: combos,              // number of combos
-                bundleSize: bundleSize,    // units per combo (1, 2, 3...)
-                physicalQty: physicalUnits, // total physical units
+                qty: 1,
+                bundleKey: selectedBundleKey,
+                bundleSize: physicalUnits,
+                physicalQty: physicalUnits,
                 date: new Date().toISOString(),
                 expectedDate: expectedDate || null,
                 status: 'pending',
@@ -995,21 +993,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         if (layaways.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted">No hay pedidos activos.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted">No hay pedidos activos.</td></tr>`;
             return;
         }
 
-        layaways.forEach(l => {
+        for (const l of layaways) {
             const tr = document.createElement('tr');
             
             // Calculate remaining time
             const created = new Date(l.date);
             let expected;
             if (l.expectedDate) {
-                // If we have a user selected date, use it and set it to end of day
                 expected = new Date(l.expectedDate + 'T23:59:59');
             } else {
-                // Fallback to 15 days from creation
                 expected = new Date(created.getTime() + (15 * 24 * 60 * 60 * 1000));
             }
             
@@ -1023,14 +1019,35 @@ document.addEventListener('DOMContentLoaded', () => {
             else if (diffDays <= 3) timeBadge = `<span class="badge badge-yellow">${diffDays} días</span>`;
             else timeBadge = `<span class="badge badge-green">${diffDays} días</span>`;
 
+            // Calculate estimated profit for this layaway
+            const prod = await db.products.get(l.productId);
+            const physicalUnits = l.physicalQty || l.bundleSize || 1;
+            const bundleKey = l.bundleKey || String(l.bundleSize || 1);
+            let comboCost = 0;
+            if (_costStructureMap && _costStructureMap[bundleKey]) {
+                const c = _costStructureMap[bundleKey];
+                comboCost = (c.cost + c.ads + c.pack + c.ship + c.comm + c.other);
+            } else if (prod) {
+                comboCost = (prod.cost + prod.ads + prod.pack + prod.ship + prod.comm + prod.other) * physicalUnits;
+            }
+            const totalCost = comboCost + (l.shipAmount || 0);
+            const estProfit = l.totalAmount - totalCost;
+            const marginPct = l.totalAmount > 0 ? Math.round((estProfit / l.totalAmount) * 100) : 0;
+
+            const bundleLabel = physicalUnits === 2 ? 'Combo (2 uds)' : (physicalUnits === 3 ? 'Combo (3 uds)' : (physicalUnits === 1 ? '1 ud' : `${physicalUnits} uds`));
+
+            const discHtml = (l.discPercent && l.discPercent > 0) ? 
+                `<br><span class="badge bg-red text-danger" style="font-size:0.75rem; margin-top:2px;">🏷️ -${l.discPercent}% desc</span>` : '';
+
             const phoneAction = l.phone ? `<a href="https://wa.me/${l.phone.replace(/[^0-9]/g, '')}" target="_blank" class="btn btn-sm btn-outline text-success" title="WhatsApp" style="padding: 4px 8px;"><i class="ph ph-whatsapp-logo"></i></a>` : '';
 
             tr.innerHTML = `
                 <td><small class="text-muted">${created.toLocaleDateString()}</small></td>
                 <td><strong>${l.customer}</strong><br><small class="text-muted">${l.phone || 'Sin teléfono'}</small></td>
-                <td>${l.qty}</td>
+                <td><span class="badge bg-darker border">📦 ${bundleLabel}</span></td>
                 <td>${timeBadge}</td>
-                <td class="text-info">RD$${l.totalAmount.toLocaleString()}</td>
+                <td><strong class="text-info">RD$${l.totalAmount.toLocaleString()}</strong>${discHtml}</td>
+                <td><span class="${estProfit >= 0 ? 'text-success' : 'text-danger'}" style="font-weight:700;">📈 RD$${Math.round(estProfit).toLocaleString()}</span><br><small class="text-muted">(${marginPct}% marg.)</small></td>
                 <td>
                     <div style="display:flex; gap:6px;">
                         ${phoneAction}
@@ -1040,7 +1057,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </td>
             `;
             tbody.appendChild(tr);
-        });
+        }
     }
 
     window.cancelLayaway = async function(layawayId, productId) {
@@ -1067,7 +1084,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Step 2: Confirm cancellation
         const result = await Swal.fire({
             title: '¿Cancelar apartado?',
-            text: 'El producto volverá a estar disponible en inventario.',
+            text: 'El apartado será marcado como cancelado.',
             icon: 'warning',
             showCancelButton: true,
             confirmButtonColor: '#EF4444',
@@ -1076,20 +1093,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         if (result.isConfirmed) {
-            const l = await db.layaways.get(layawayId);
             await db.layaways.update(layawayId, { status: 'cancelled' });
-            // Restore stock — use physical units (qty × bundleSize)
-            const p = await db.products.get(productId);
-            if (p && l) {
-                const units = l.physicalQty || (l.qty * (l.bundleSize || 1));
-                await db.products.update(productId, { stock: p.stock + units });
-                document.getElementById('prod-stock').value = p.stock + units;
-            }
             loadLayaways(productId);
             loadMetrics(productId);
             loadProductsTable();
             initDashboard();
-            Swal.fire({ icon: 'success', title: 'Apartado Cancelado', text: 'El stock fue restaurado.', timer: 1500, showConfirmButton: false });
+            Swal.fire({ icon: 'success', title: 'Apartado Cancelado', timer: 1500, showConfirmButton: false });
         }
     };
 
@@ -1197,8 +1206,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             <option value="3">Combo de 3 Unidades</option>
                             <option value="pack">Paquete Especial</option>
                         </select>
-                        <label style="font-size:0.85rem;font-weight:600;color:#9CA3AF;">Cantidad:</label>
-                        <input id="swal-qty" type="number" class="swal2-input" value="1" min="1" max="${p.stock}">
+                        <label style="font-size:0.85rem;font-weight:600;color:#9CA3AF;">Cantidad (Orden):</label>
+                        <input id="swal-qty" type="number" class="swal2-input" value="1" min="1" max="1" readonly style="background:rgba(255,255,255,0.05); color:#9CA3AF; cursor:not-allowed;">
                         <label style="font-size:0.85rem;font-weight:600;color:#9CA3AF;">Precio por Combo (RD$):</label>
                         <input id="swal-price" type="number" class="swal2-input" value="${p.price}">
                         <label style="font-size:0.85rem;font-weight:600;color:#9CA3AF;">Método de Pago:</label>
@@ -1441,18 +1450,24 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         sales.forEach(s => {
-            const revenue = s.price * s.qty;
+            const revenue = s.price;
             const profit = revenue - s.totalCost;
+            const marginPct = revenue > 0 ? Math.round((profit / revenue) * 100) : 0;
             const pmBadge = s.paymentMethod === 'Transferencia' ? 'bg-blue text-primary' : (s.paymentMethod === 'Tarjeta' ? 'bg-orange text-warning' : 'bg-green text-success');
+            const physicalUnits = s.physicalQty || s.bundleSize || 1;
+            const bundleLabel = physicalUnits === 2 ? 'Combo (2 uds)' : (physicalUnits === 3 ? 'Combo (3 uds)' : (physicalUnits === 1 ? '1 ud' : `${physicalUnits} uds`));
+
+            const discHtml = (s.discPercent && s.discPercent > 0) ? 
+                `<br><span class="badge bg-red text-danger" style="font-size:0.75rem; margin-top:2px;">🏷️ -${s.discPercent}% desc</span>` : '';
             
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td><small class="text-muted">${new Date(s.date).toLocaleDateString()}</small></td>
                 <td><strong>${s.customer}</strong> <br><small class="text-muted">${s.source === 'layaway' ? 'De Apartado' : 'Directa'}</small></td>
                 <td><span class="badge ${pmBadge}">${s.paymentMethod || 'Efectivo'}</span></td>
-                <td>${s.qty}</td>
-                <td class="text-info">RD$${revenue.toLocaleString()}</td>
-                <td class="${profit > 0 ? 'text-success' : 'text-danger'}">RD$${Math.round(profit).toLocaleString()}</td>
+                <td><span class="badge bg-darker border">📦 ${bundleLabel}</span></td>
+                <td><strong class="text-info">RD$${revenue.toLocaleString()}</strong>${discHtml}</td>
+                <td><span class="${profit >= 0 ? 'text-success' : 'text-danger'}" style="font-weight:700;">📈 RD$${Math.round(profit).toLocaleString()}</span><br><small class="text-muted">(${marginPct}% marg.)</small></td>
                 <td>
                     <div style="display:flex; gap:6px;">
                         <button class="btn btn-sm btn-outline" onclick="Swal.fire('Detalle', 'Venta el ${new Date(s.date).toLocaleString()}', 'info')"><i class="ph ph-eye"></i></button>
@@ -1500,8 +1515,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if(s) {
                 const p = await db.products.get(productId);
                 if(p) {
-                    await db.products.update(productId, { stock: p.stock + s.qty });
-                    document.getElementById('prod-stock').value = p.stock + s.qty;
+                    const unitsToRestore = s.physicalQty || (s.source === 'layaway' ? s.qty : (s.qty * (s.bundleSize || 1)));
+                    await db.products.update(productId, { stock: p.stock + unitsToRestore });
+                    document.getElementById('prod-stock').value = p.stock + unitsToRestore;
                 }
                 await db.sales.delete(saleId);
                 loadSales(productId);
@@ -2234,6 +2250,560 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Descargar
         XLSX.writeFile(wb, `Reporte_PRISMAR_${productName}_${new Date().toISOString().split('T')[0]}.xlsx`);
+    };
+
+    // =========================================================================
+    // MODULO DE COMPRAS E INVENTARIO (Multi-artículo, prorrateo y stock auto)
+    // =========================================================================
+    const modalPurchase = document.getElementById('modal-purchase');
+    const modalPurchaseDetail = document.getElementById('modal-purchase-detail');
+    const btnNewPurchase = document.getElementById('btn-new-purchase');
+    const quickNewPurchase = document.getElementById('quick-new-purchase');
+    const btnClosePurchaseModal = document.getElementById('btn-close-purchase-modal');
+    const btnClosePurchaseDetailModal = document.getElementById('btn-close-purchase-detail-modal');
+    const btnClosePurchaseDetail = document.getElementById('btn-close-purchase-detail');
+    const btnCancelPurchase = document.getElementById('btn-cancel-purchase');
+    const formPurchase = document.getElementById('form-purchase');
+    const btnAddPurchaseItem = document.getElementById('btn-add-purchase-item');
+    const purchaseItemsTbody = document.getElementById('purchase-items-tbody');
+    const searchPurchases = document.getElementById('search-purchases');
+    const distMethodSelect = document.getElementById('purchase-expense-dist-method');
+
+    // Abrir Modal de Nueva Compra
+    async function openPurchaseModal() {
+        if (!modalPurchase) return;
+        if (formPurchase) formPurchase.reset();
+        if (purchaseItemsTbody) purchaseItemsTbody.innerHTML = '';
+        
+        // Generar Número de Compra correlativo
+        const allPurchases = await db.purchases.toArray();
+        const nextNum = allPurchases.length + 1;
+        document.getElementById('purchase-number').value = `COMP-${new Date().getFullYear()}-${String(nextNum).padStart(4, '0')}`;
+        document.getElementById('purchase-date').value = new Date().toISOString().split('T')[0];
+        
+        // Fila inicial
+        await addPurchaseItemRow();
+        
+        recalculatePurchaseTotals();
+        
+        modalPurchase.style.display = 'flex';
+        void modalPurchase.offsetWidth;
+        modalPurchase.classList.add('active');
+    }
+
+    function closePurchaseModal() {
+        if (!modalPurchase) return;
+        modalPurchase.classList.remove('active');
+        setTimeout(() => {
+            modalPurchase.style.display = 'none';
+        }, 200);
+    }
+
+    function closePurchaseDetailModal() {
+        if (!modalPurchaseDetail) return;
+        modalPurchaseDetail.classList.remove('active');
+        setTimeout(() => {
+            modalPurchaseDetail.style.display = 'none';
+        }, 200);
+    }
+
+    if (btnNewPurchase) btnNewPurchase.addEventListener('click', openPurchaseModal);
+    if (quickNewPurchase) quickNewPurchase.addEventListener('click', openPurchaseModal);
+    if (btnClosePurchaseModal) btnClosePurchaseModal.addEventListener('click', closePurchaseModal);
+    if (btnCancelPurchase) btnCancelPurchase.addEventListener('click', closePurchaseModal);
+    if (btnClosePurchaseDetailModal) btnClosePurchaseDetailModal.addEventListener('click', closePurchaseDetailModal);
+    if (btnClosePurchaseDetail) btnClosePurchaseDetail.addEventListener('click', closePurchaseDetailModal);
+
+    // Constructor dinámico de filas de artículo
+    async function addPurchaseItemRow(defaultProdId = null) {
+        if (!purchaseItemsTbody) return;
+        const products = await db.products.toArray();
+        if (products.length === 0) {
+            Swal.fire('Atención', 'No tienes productos registrados en el inventario. Crea productos primero.', 'warning');
+            return;
+        }
+
+        const tr = document.createElement('tr');
+        tr.className = 'purchase-item-row';
+
+        let prodOptionsHTML = `<option value="">-- Seleccionar Artículo --</option>`;
+        products.forEach(p => {
+            const selected = (defaultProdId && String(p.id) === String(defaultProdId)) ? 'selected' : '';
+            prodOptionsHTML += `<option value="${p.id}" data-cost="${p.cost || 0}" ${selected}>${p.name} (Stock: ${p.stock || 0})</option>`;
+        });
+
+        tr.innerHTML = `
+            <td>
+                <select class="purchase-item-product select-style" required style="width: 100%; padding: 6px 8px; font-weight: 500; background: var(--bg-main); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px;">
+                    ${prodOptionsHTML}
+                </select>
+            </td>
+            <td>
+                <input type="number" class="purchase-item-qty input-style" value="1" min="1" required style="width: 100%; padding: 6px; background: var(--bg-main); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px;">
+            </td>
+            <td>
+                <input type="number" class="purchase-item-cost input-style" value="0" min="0" step="any" required style="width: 100%; padding: 6px; background: var(--bg-main); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px;">
+            </td>
+            <td>
+                <strong class="purchase-item-subtotal text-primary" style="font-size: 0.95rem;">RD$ 0</strong>
+            </td>
+            <td>
+                <span class="purchase-item-dist-expense text-warning" style="font-size: 0.85rem;">+RD$ 0</span>
+            </td>
+            <td>
+                <strong class="purchase-item-real-unit-cost text-success" style="font-size: 0.95rem;">RD$ 0</strong>
+            </td>
+            <td style="text-align: center;">
+                <button type="button" class="btn btn-sm btn-outline text-danger btn-remove-item" title="Eliminar fila" style="padding: 4px 8px;">
+                    <i class="ph ph-trash"></i>
+                </button>
+            </td>
+        `;
+
+        purchaseItemsTbody.appendChild(tr);
+
+        const prodSelect = tr.querySelector('.purchase-item-product');
+        const qtyInput = tr.querySelector('.purchase-item-qty');
+        const costInput = tr.querySelector('.purchase-item-cost');
+        const removeBtn = tr.querySelector('.btn-remove-item');
+
+        prodSelect.addEventListener('change', () => {
+            const selectedOpt = prodSelect.options[prodSelect.selectedIndex];
+            if (selectedOpt && selectedOpt.dataset.cost) {
+                costInput.value = parseFloat(selectedOpt.dataset.cost) || 0;
+            }
+            recalculatePurchaseTotals();
+        });
+
+        qtyInput.addEventListener('input', recalculatePurchaseTotals);
+        costInput.addEventListener('input', recalculatePurchaseTotals);
+
+        removeBtn.addEventListener('click', () => {
+            if (purchaseItemsTbody.children.length <= 1) {
+                Swal.fire('Atención', 'La compra debe contener al menos un artículo.', 'info');
+                return;
+            }
+            tr.remove();
+            recalculatePurchaseTotals();
+        });
+
+        if (defaultProdId) {
+            const selectedOpt = prodSelect.options[prodSelect.selectedIndex];
+            if (selectedOpt && selectedOpt.dataset.cost) {
+                costInput.value = parseFloat(selectedOpt.dataset.cost) || 0;
+            }
+        }
+
+        recalculatePurchaseTotals();
+    }
+
+    if (btnAddPurchaseItem) {
+        btnAddPurchaseItem.addEventListener('click', () => addPurchaseItemRow());
+    }
+
+    document.querySelectorAll('.purchase-expense-input').forEach(input => {
+        input.addEventListener('input', recalculatePurchaseTotals);
+    });
+    if (distMethodSelect) {
+        distMethodSelect.addEventListener('change', recalculatePurchaseTotals);
+    }
+
+    // Motor de cálculo de la compra y prorrateo de gastos adicionales
+    function recalculatePurchaseTotals() {
+        if (!purchaseItemsTbody) return;
+        const rows = purchaseItemsTbody.querySelectorAll('.purchase-item-row');
+        
+        let merchandiseSubtotal = 0;
+        let totalUnits = 0;
+        
+        const rowDataList = [];
+
+        rows.forEach(tr => {
+            const qty = parseInt(tr.querySelector('.purchase-item-qty').value) || 0;
+            const unitCost = parseFloat(tr.querySelector('.purchase-item-cost').value) || 0;
+            const subtotal = qty * unitCost;
+
+            merchandiseSubtotal += subtotal;
+            totalUnits += qty;
+
+            rowDataList.push({
+                tr,
+                qty,
+                unitCost,
+                subtotal
+            });
+        });
+
+        // Gastos adicionales
+        const expShipping = parseFloat(document.getElementById('exp-shipping')?.value) || 0;
+        const expTransport = parseFloat(document.getElementById('exp-transport')?.value) || 0;
+        const expCustoms = parseFloat(document.getElementById('exp-customs')?.value) || 0;
+        const expPackaging = parseFloat(document.getElementById('exp-packaging')?.value) || 0;
+        const expOthers = parseFloat(document.getElementById('exp-others')?.value) || 0;
+
+        const totalAdditionalExpenses = expShipping + expTransport + expCustoms + expPackaging + expOthers;
+        const finalTotal = merchandiseSubtotal + totalAdditionalExpenses;
+
+        const distMethod = distMethodSelect ? distMethodSelect.value : 'value';
+
+        // Prorrateo por fila
+        rowDataList.forEach(data => {
+            let allocatedExpense = 0;
+            if (totalAdditionalExpenses > 0) {
+                if (distMethod === 'value' && merchandiseSubtotal > 0) {
+                    allocatedExpense = (data.subtotal / merchandiseSubtotal) * totalAdditionalExpenses;
+                } else if (distMethod === 'qty' && totalUnits > 0) {
+                    allocatedExpense = (data.qty / totalUnits) * totalAdditionalExpenses;
+                }
+            }
+
+            const realLandedUnitCost = data.qty > 0 ? ((data.subtotal + allocatedExpense) / data.qty) : 0;
+
+            data.tr.querySelector('.purchase-item-subtotal').textContent = `RD$ ${Math.round(data.subtotal).toLocaleString()}`;
+            data.tr.querySelector('.purchase-item-dist-expense').textContent = `+RD$ ${Math.round(allocatedExpense).toLocaleString()}`;
+            data.tr.querySelector('.purchase-item-real-unit-cost').textContent = `RD$ ${Math.round(realLandedUnitCost).toLocaleString()}`;
+        });
+
+        // Resumen
+        const elSubtotal = document.getElementById('summary-merchandise-subtotal');
+        const elExpenses = document.getElementById('summary-additional-expenses');
+        const elFinal = document.getElementById('summary-final-total');
+
+        if (elSubtotal) elSubtotal.textContent = `RD$ ${Math.round(merchandiseSubtotal).toLocaleString()}`;
+        if (elExpenses) elExpenses.textContent = `+RD$ ${Math.round(totalAdditionalExpenses).toLocaleString()}`;
+        if (elFinal) elFinal.textContent = `RD$ ${Math.round(finalTotal).toLocaleString()}`;
+    }
+
+    // Registro de Compra y Actualización Automática de Inventario
+    if (formPurchase) {
+        formPurchase.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const rows = purchaseItemsTbody.querySelectorAll('.purchase-item-row');
+            if (rows.length === 0) {
+                Swal.fire('Atención', 'Debes agregar al menos un artículo a la compra.', 'warning');
+                return;
+            }
+
+            const purchaseNumber = document.getElementById('purchase-number').value;
+            const supplier = document.getElementById('purchase-supplier').value || 'Sin especificar';
+            const purchaseDate = document.getElementById('purchase-date').value || new Date().toISOString().split('T')[0];
+
+            const expShipping = parseFloat(document.getElementById('exp-shipping').value) || 0;
+            const expTransport = parseFloat(document.getElementById('exp-transport').value) || 0;
+            const expCustoms = parseFloat(document.getElementById('exp-customs').value) || 0;
+            const expPackaging = parseFloat(document.getElementById('exp-packaging').value) || 0;
+            const expOthers = parseFloat(document.getElementById('exp-others').value) || 0;
+
+            const totalAdditionalExpenses = expShipping + expTransport + expCustoms + expPackaging + expOthers;
+            const distMethod = distMethodSelect ? distMethodSelect.value : 'value';
+
+            const items = [];
+            let merchandiseSubtotal = 0;
+            let totalUnits = 0;
+
+            for (const tr of rows) {
+                const prodId = parseInt(tr.querySelector('.purchase-item-product').value);
+                const qty = parseInt(tr.querySelector('.purchase-item-qty').value) || 0;
+                const unitCost = parseFloat(tr.querySelector('.purchase-item-cost').value) || 0;
+
+                if (!prodId) {
+                    Swal.fire('Atención', 'Por favor selecciona un artículo válido en cada fila.', 'warning');
+                    return;
+                }
+                if (qty <= 0) {
+                    Swal.fire('Atención', 'La cantidad de cada artículo debe ser mayor a 0.', 'warning');
+                    return;
+                }
+
+                const prod = await db.products.get(prodId);
+                const productName = prod ? prod.name : 'Producto Desconocido';
+                const subtotal = qty * unitCost;
+
+                merchandiseSubtotal += subtotal;
+                totalUnits += qty;
+
+                items.push({
+                    productId: prodId,
+                    productName,
+                    qty,
+                    unitCost,
+                    subtotal
+                });
+            }
+
+            // Distribuir gastos entre los artículos
+            items.forEach(item => {
+                let allocatedExpense = 0;
+                if (totalAdditionalExpenses > 0) {
+                    if (distMethod === 'value' && merchandiseSubtotal > 0) {
+                        allocatedExpense = (item.subtotal / merchandiseSubtotal) * totalAdditionalExpenses;
+                    } else if (distMethod === 'qty' && totalUnits > 0) {
+                        allocatedExpense = (item.qty / totalUnits) * totalAdditionalExpenses;
+                    }
+                }
+                item.allocatedExpense = Math.round(allocatedExpense * 100) / 100;
+                item.realUnitCost = Math.round(((item.subtotal + allocatedExpense) / item.qty) * 100) / 100;
+                item.totalLandedCost = Math.round((item.subtotal + allocatedExpense) * 100) / 100;
+            });
+
+            const finalTotalAmount = merchandiseSubtotal + totalAdditionalExpenses;
+
+            const purchaseRecord = {
+                purchaseNumber,
+                date: purchaseDate,
+                supplier,
+                user: 'Administrador',
+                items,
+                expensesBreakdown: {
+                    shipping: expShipping,
+                    transport: expTransport,
+                    customs: expCustoms,
+                    packaging: expPackaging,
+                    others: expOthers
+                },
+                totalAdditionalExpenses,
+                merchandiseSubtotal,
+                totalAmount: finalTotalAmount,
+                distMethod,
+                totalUnits,
+                createdAt: new Date().toISOString()
+            };
+
+            // 1. Guardar Registro de Compra
+            await db.purchases.add(purchaseRecord);
+
+            // 2. AUMENTAR INVENTARIO DE CADA ARTÍCULO Y ACTUALIZAR COSTO UNITARIO REAL
+            for (const item of items) {
+                const prod = await db.products.get(item.productId);
+                if (prod) {
+                    const newStock = (prod.stock || 0) + item.qty;
+                    await db.products.update(prod.id, { 
+                        stock: newStock,
+                        cost: item.realUnitCost
+                    });
+                }
+            }
+
+            closePurchaseModal();
+            Swal.fire({
+                icon: 'success',
+                title: '¡Compra Registrada!',
+                html: `Se registró la compra <b>${purchaseNumber}</b> por un total de <b>RD$ ${finalTotalAmount.toLocaleString()}</b>.<br>Se actualizó automáticamente el inventario de todos los artículos.`,
+                timer: 3000,
+                showConfirmButton: true
+            });
+
+            initPurchasesView();
+            initProductsView();
+        });
+    }
+
+    // Renderizar Historial de Compras
+    async function initPurchasesView() {
+        const tbody = document.getElementById('purchases-tbody');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+
+        const allPurchases = await db.purchases.toArray();
+        allPurchases.sort((a, b) => new Date(b.createdAt || b.date) - new Date(a.createdAt || a.date));
+
+        const query = (document.getElementById('search-purchases')?.value || '').toLowerCase().trim();
+        const filtered = allPurchases.filter(p => {
+            if (!query) return true;
+            return (p.purchaseNumber && p.purchaseNumber.toLowerCase().includes(query)) ||
+                   (p.supplier && p.supplier.toLowerCase().includes(query));
+        });
+
+        let grandTotalCount = allPurchases.length;
+        let grandTotalItems = 0;
+        let grandTotalAmount = 0;
+
+        allPurchases.forEach(p => {
+            grandTotalAmount += (p.totalAmount || 0);
+            if (p.items) {
+                p.items.forEach(i => grandTotalItems += (i.qty || 0));
+            }
+        });
+
+        const elCount = document.getElementById('purchases-total-count');
+        const elItems = document.getElementById('purchases-total-items');
+        const elAmount = document.getElementById('purchases-total-amount');
+
+        if (elCount) elCount.textContent = grandTotalCount;
+        if (elItems) elItems.textContent = grandTotalItems;
+        if (elAmount) elAmount.textContent = `RD$ ${Math.round(grandTotalAmount).toLocaleString()}`;
+
+        if (filtered.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted p-4">No hay compras registradas.</td></tr>`;
+            return;
+        }
+
+        filtered.forEach(p => {
+            const tr = document.createElement('tr');
+            const totalUnits = p.totalUnits || (p.items ? p.items.reduce((acc, i) => acc + i.qty, 0) : 0);
+            const itemCount = p.items ? p.items.length : 0;
+            const itemsSummaryText = `${itemCount} artículo${itemCount !== 1 ? 's' : ''} (${totalUnits} uds)`;
+
+            tr.innerHTML = `
+                <td><strong class="text-primary">${p.purchaseNumber}</strong></td>
+                <td><small class="text-muted">${new Date(p.date).toLocaleDateString()}</small></td>
+                <td><strong>${p.supplier || 'Sin especificar'}</strong></td>
+                <td><span class="badge bg-darker border">📦 ${itemsSummaryText}</span></td>
+                <td>RD$ ${Math.round(p.merchandiseSubtotal || 0).toLocaleString()}</td>
+                <td class="text-warning">+RD$ ${Math.round(p.totalAdditionalExpenses || 0).toLocaleString()}</td>
+                <td><strong class="text-success" style="font-size: 1.05rem;">RD$ ${Math.round(p.totalAmount || 0).toLocaleString()}</strong></td>
+                <td><small class="text-muted"><i class="ph ph-user"></i> ${p.user || 'Administrador'}</small></td>
+                <td>
+                    <div style="display: flex; gap: 6px;">
+                        <button class="btn btn-sm btn-outline text-primary" onclick="viewPurchaseDetail(${p.id})" title="Ver recibo / detalle"><i class="ph ph-eye"></i></button>
+                        <button class="btn btn-sm btn-outline text-danger" onclick="deletePurchase(${p.id})" title="Eliminar compra"><i class="ph ph-trash"></i></button>
+                    </div>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    if (searchPurchases) {
+        searchPurchases.addEventListener('input', initPurchasesView);
+    }
+
+    // Ver Recibo / Detalle completo de la Compra
+    window.viewPurchaseDetail = async function(id) {
+        const purchase = await db.purchases.get(id);
+        if (!purchase) return;
+
+        document.getElementById('purchase-detail-number').textContent = purchase.purchaseNumber;
+        const container = document.getElementById('purchase-detail-content');
+
+        let itemsRowsHTML = '';
+        if (purchase.items) {
+            purchase.items.forEach(item => {
+                itemsRowsHTML += `
+                    <tr>
+                        <td><strong>${item.productName}</strong></td>
+                        <td>${item.qty} uds</td>
+                        <td>RD$ ${Math.round(item.unitCost).toLocaleString()}</td>
+                        <td>RD$ ${Math.round(item.subtotal).toLocaleString()}</td>
+                        <td class="text-warning">+RD$ ${Math.round(item.allocatedExpense || 0).toLocaleString()}</td>
+                        <td><strong class="text-success">RD$ ${Math.round(item.realUnitCost || item.unitCost).toLocaleString()}</strong></td>
+                        <td><strong class="text-info">RD$ ${Math.round(item.totalLandedCost || item.subtotal).toLocaleString()}</strong></td>
+                    </tr>
+                `;
+            });
+        }
+
+        const exp = purchase.expensesBreakdown || {};
+
+        container.innerHTML = `
+            <div style="display:flex; justify-content:space-between; margin-bottom: 20px; flex-wrap:wrap; gap:12px;" class="card bg-darker p-3">
+                <div>
+                    <span class="text-muted" style="font-size:0.85rem;">Proveedor:</span><br>
+                    <strong style="font-size:1.1rem;">${purchase.supplier}</strong>
+                </div>
+                <div>
+                    <span class="text-muted" style="font-size:0.85rem;">Fecha de Compra:</span><br>
+                    <strong>${new Date(purchase.date).toLocaleDateString()}</strong>
+                </div>
+                <div>
+                    <span class="text-muted" style="font-size:0.85rem;">Registrado Por:</span><br>
+                    <strong><i class="ph ph-user"></i> ${purchase.user || 'Administrador'}</strong>
+                </div>
+            </div>
+
+            <h3 class="mb-2" style="font-size: 1rem; color: var(--primary);"><i class="ph ph-package"></i> Lista de Artículos Comprados</h3>
+            <div class="table-responsive mb-4">
+                <table class="table" style="font-size: 0.9rem;">
+                    <thead>
+                        <tr>
+                            <th>Artículo</th>
+                            <th>Cant.</th>
+                            <th>Costo Base Unit.</th>
+                            <th>Subtotal</th>
+                            <th>Gasto Adic. Prorrateado</th>
+                            <th>Costo Real Unit.</th>
+                            <th>Costo Total Final</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${itemsRowsHTML}
+                    </tbody>
+                </table>
+            </div>
+
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px;">
+                <div class="card bg-darker p-3 border border-color">
+                    <h4 style="font-size: 0.9rem; color: var(--warning);" class="mb-2"><i class="ph ph-truck"></i> Desglose Gastos Adicionales</h4>
+                    <div class="flex-between mb-1" style="font-size:0.85rem;"><span class="text-muted">Envío:</span> <span>RD$ ${Math.round(exp.shipping || 0).toLocaleString()}</span></div>
+                    <div class="flex-between mb-1" style="font-size:0.85rem;"><span class="text-muted">Transporte:</span> <span>RD$ ${Math.round(exp.transport || 0).toLocaleString()}</span></div>
+                    <div class="flex-between mb-1" style="font-size:0.85rem;"><span class="text-muted">Aduana:</span> <span>RD$ ${Math.round(exp.customs || 0).toLocaleString()}</span></div>
+                    <div class="flex-between mb-1" style="font-size:0.85rem;"><span class="text-muted">Empaque:</span> <span>RD$ ${Math.round(exp.packaging || 0).toLocaleString()}</span></div>
+                    <div class="flex-between mb-1" style="font-size:0.85rem;"><span class="text-muted">Otros:</span> <span>RD$ ${Math.round(exp.others || 0).toLocaleString()}</span></div>
+                    <hr style="border:0; border-top:1px solid var(--border-color); margin:6px 0;">
+                    <div class="flex-between" style="font-size:0.9rem; font-weight:700;"><span class="text-warning">Total Gastos:</span> <span class="text-warning">+RD$ ${Math.round(purchase.totalAdditionalExpenses || 0).toLocaleString()}</span></div>
+                </div>
+
+                <div class="card bg-darker p-3 border border-color" style="display:flex; flex-direction:column; justify-content:center;">
+                    <div class="flex-between mb-2"><span class="text-muted">Subtotal Mercancía:</span> <strong>RD$ ${Math.round(purchase.merchandiseSubtotal || 0).toLocaleString()}</strong></div>
+                    <div class="flex-between mb-2"><span class="text-muted">Gastos Adicionales:</span> <strong class="text-warning">+RD$ ${Math.round(purchase.totalAdditionalExpenses || 0).toLocaleString()}</strong></div>
+                    <hr style="border:0; border-top:1px solid var(--border-color); margin:10px 0;">
+                    <div class="flex-between"><span style="font-size:1.1rem; font-weight:700;">TOTAL DE LA COMPRA:</span> <strong class="text-success" style="font-size:1.3rem;">RD$ ${Math.round(purchase.totalAmount || 0).toLocaleString()}</strong></div>
+                </div>
+            </div>
+        `;
+
+        document.getElementById('btn-delete-purchase').onclick = () => window.deletePurchase(id);
+
+        modalPurchaseDetail.style.display = 'flex';
+        void modalPurchaseDetail.offsetWidth;
+        modalPurchaseDetail.classList.add('active');
+    };
+
+    // Eliminar Compra con PIN
+    window.deletePurchase = async function(id) {
+        const purchase = await db.purchases.get(id);
+        if (!purchase) return;
+
+        const { value: pin } = await Swal.fire({
+            title: 'Autorización Requerida',
+            html: `<p style="color:#9CA3AF;margin-bottom:8px;">Introduce el PIN para eliminar la compra <b>${purchase.purchaseNumber}</b>:</p>`,
+            input: 'password',
+            inputPlaceholder: '••••',
+            inputAttributes: { maxlength: 4, autocomplete: 'off' },
+            showCancelButton: true,
+            confirmButtonText: 'Eliminar',
+            cancelButtonText: 'Cancelar'
+        });
+
+        if (pin === 'C1290' || pin === '1290') {
+            const { isConfirmed } = await Swal.fire({
+                title: '¿Revertir stock de inventario?',
+                text: '¿Deseas descontar del inventario las unidades que se ingresaron con esta compra?',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: 'Sí, descontar stock',
+                cancelButtonText: 'No, mantener stock actual'
+            });
+
+            if (isConfirmed && purchase.items) {
+                for (const item of purchase.items) {
+                    const prod = await db.products.get(item.productId);
+                    if (prod) {
+                        const revertedStock = Math.max(0, (prod.stock || 0) - item.qty);
+                        await db.products.update(prod.id, { stock: revertedStock });
+                    }
+                }
+            }
+
+            await db.purchases.delete(id);
+            closePurchaseDetailModal();
+            Swal.fire('Eliminado', 'La compra fue eliminada con éxito.', 'success');
+            initPurchasesView();
+            initProductsView();
+        } else if (pin) {
+            Swal.fire('Error', 'PIN de autorización incorrecto.', 'error');
+        }
     };
 
     // Initialize first view
